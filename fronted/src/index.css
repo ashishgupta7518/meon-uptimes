@@ -123,3 +123,13 @@ code {
   background: var(--code-bg);
 }
 
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1); /* keep dark */
+  opacity: 1;
+  cursor: pointer;
+}
+
+
+
+

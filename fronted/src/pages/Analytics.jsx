@@ -1,160 +1,215 @@
-﻿import { useMemo, useState } from 'react';
-import { serviceList, getRandomValue, statusStyles, statusLabel } from '../data/services';
+import { useEffect, useState } from 'react';
+import CurveChart from '../components/CurveChart';
+import { getMonitoringAnalytics } from '../api/credentials';
+
+const rangeOptions = [7, 14, 30];
+
+const statusTone = {
+  up: 'bg-emerald-50 text-emerald-700',
+  warning: 'bg-amber-50 text-amber-700',
+  down: 'bg-red-50 text-red-700',
+  unknown: 'bg-slate-100 text-slate-600',
+};
+
+const formatDuration = (minutes) => {
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remaining = minutes % 60;
+  return remaining ? `${hours}h ${remaining}m` : `${hours}h`;
+};
 
 const Analytics = () => {
-  const [selectedServiceName, setSelectedServiceName] = useState(serviceList[0]?.name);
+  const [rangeDays, setRangeDays] = useState(14);
+  const [data, setData] = useState({ overview: {}, highlights: {}, leaderboard: [], trend: [] });
+  const [notice, setNotice] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  const serviceMetrics = useMemo(
-    () =>
-      serviceList.map((item, index) => ({
-        ...item,
-        cpu: getRandomValue(40, 4, index),
-        memory: getRandomValue(45, 3, index),
-        uptime: 90 + (index % 9),
-        responseTime: 110 + index * 9,
-      })),
-    []
-  );
+  useEffect(() => {
+    let ignore = false;
 
-  const selected = serviceMetrics.find((item) => item.name === selectedServiceName) || serviceMetrics[0];
-  const trend = [
-    Math.max(12, selected.cpu - 8),
-    Math.max(18, selected.cpu - 4),
-    selected.cpu,
-    Math.min(100, selected.cpu + 4),
-    Math.min(100, selected.cpu + 7),
-  ];
-  const topCpu = [...serviceMetrics].sort((a, b) => b.cpu - a.cpu).slice(0, 4);
-  const highestUptime = [...serviceMetrics].sort((a, b) => b.uptime - a.uptime)[0];
-  const slowestResponse = [...serviceMetrics].sort((a, b) => b.responseTime - a.responseTime)[0];
+    const loadAnalytics = async () => {
+      setIsLoading(true);
+      setNotice('');
+      try {
+        const response = await getMonitoringAnalytics({ days: rangeDays });
+        if (!ignore) {
+          setData(response);
+        }
+      } catch (error) {
+        if (!ignore) {
+          setNotice(error.message);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadAnalytics();
+    return () => {
+      ignore = true;
+    };
+  }, [rangeDays]);
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Analytics</h1>
-          <p className="text-gray-600 mt-1">Dynamic insights and charts for every service.</p>
-        </div>
-        <div className="rounded-3xl bg-white px-5 py-3 shadow-lg shadow-gray-200">
-          <label htmlFor="service-select" className="block text-xs font-semibold uppercase tracking-[0.28em] text-gray-500">
-            Select service
-          </label>
-          <select
-            id="service-select"
-            value={selectedServiceName}
-            onChange={(e) => setSelectedServiceName(e.target.value)}
-            className="mt-3 block w-full rounded-3xl border border-gray-200 bg-slate-50 px-4 py-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-          >
-            {serviceMetrics.map((service) => (
-              <option key={service.name} value={service.name}>
-                {service.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="rounded-3xl bg-gradient-to-br from-blue-600 to-blue-700 p-6 text-white shadow-lg shadow-blue-500/20">
-          <p className="text-sm uppercase tracking-[0.28em] text-blue-200/90">Avg CPU</p>
-          <p className="mt-4 text-4xl font-bold">{selected.cpu}%</p>
-          <p className="mt-3 text-sm text-blue-100/85">Current service performance.</p>
-        </div>
-        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-          <p className="text-sm uppercase tracking-[0.28em] text-gray-500">Response time</p>
-          <p className="mt-4 text-4xl font-bold text-gray-900">{selected.responseTime} ms</p>
-          <p className="mt-3 text-sm text-gray-500">Average latency for this service.</p>
-        </div>
-        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-          <p className="text-sm uppercase tracking-[0.28em] text-gray-500">Uptime</p>
-          <p className="mt-4 text-4xl font-bold text-gray-900">{selected.uptime}%</p>
-          <p className="mt-3 text-sm text-gray-500">Service availability trend.</p>
-        </div>
-      </div>
-
-      <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900">Performance chart</h2>
-            <p className="text-sm text-gray-500">Trend bars for the selected service.</p>
-          </div>
-          <span className={`rounded-full px-4 py-2 text-xs font-semibold ${statusStyles[selected.status]}`}>
-            {statusLabel[selected.status]}
-          </span>
+          <p className="mt-1 text-gray-600">Portfolio-wide service insights built from stored uptime and downtime data.</p>
         </div>
 
-        <div className="mt-8 grid gap-4">
-          {trend.map((value, index) => (
-            <div key={index}>
-              <div className="flex items-center justify-between text-sm text-gray-700">
-                <span>Interval {index + 1}</span>
-                <span>{value}%</span>
-              </div>
-              <div className="mt-2 h-3 rounded-full bg-slate-200 overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400" style={{ width: `${value}%` }} />
-              </div>
-            </div>
+        <div className="flex rounded-2xl border border-gray-200 bg-white p-1 shadow-sm">
+          {rangeOptions.map((option) => (
+            <button
+              key={option}
+              onClick={() => setRangeDays(option)}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                rangeDays === option ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-slate-50'
+              }`}
+              type="button"
+            >
+              {option}d
+            </button>
           ))}
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.4fr_0.9fr]">
+      {notice && (
+        <div className="rounded-3xl border border-red-100 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">
+          {notice}
+        </div>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-4">
         <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
+          <p className="text-sm font-medium text-gray-500">Tracked services</p>
+          <p className="mt-4 text-4xl font-bold text-gray-900">{isLoading ? '...' : data.overview?.servicesTracked || 0}</p>
+        </div>
+        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
+          <p className="text-sm font-medium text-gray-500">Average availability</p>
+          <p className="mt-4 text-4xl font-bold text-emerald-600">
+            {isLoading ? '...' : `${Number(data.overview?.averageAvailability || 0).toFixed(2)}%`}
+          </p>
+        </div>
+        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
+          <p className="text-sm font-medium text-gray-500">Total downtime</p>
+          <p className="mt-4 text-4xl font-bold text-red-600">{isLoading ? '...' : formatDuration(data.overview?.totalDowntimeMinutes || 0)}</p>
+        </div>
+        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
+          <p className="text-sm font-medium text-gray-500">Incidents</p>
+          <p className="mt-4 text-4xl font-bold text-blue-700">{isLoading ? '...' : data.overview?.totalIncidents || 0}</p>
+        </div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
+        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Selected service details</h2>
-              <p className="text-sm text-gray-500">The dashboard reflects the selected endpoint metrics.</p>
+              <p className="text-sm font-medium uppercase tracking-[0.24em] text-gray-500">Trend</p>
+              <h2 className="mt-2 text-2xl font-semibold text-gray-900">Portfolio availability</h2>
             </div>
-            <div className="rounded-3xl bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-600">
-              {selected.name}
-            </div>
+            <span className="rounded-full bg-blue-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
+              last {rangeDays} days
+            </span>
           </div>
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-3xl bg-slate-50 p-5">
-              <p className="text-xs uppercase tracking-[0.24em] text-gray-400">CPU</p>
-              <p className="mt-3 text-3xl font-semibold text-gray-900">{selected.cpu}%</p>
-            </div>
-            <div className="rounded-3xl bg-slate-50 p-5">
-              <p className="text-xs uppercase tracking-[0.24em] text-gray-400">Memory</p>
-              <p className="mt-3 text-3xl font-semibold text-gray-900">{selected.memory}%</p>
-            </div>
-            <div className="rounded-3xl bg-slate-50 p-5">
-              <p className="text-xs uppercase tracking-[0.24em] text-gray-400">Uptime</p>
-              <p className="mt-3 text-3xl font-semibold text-gray-900">{selected.uptime}%</p>
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-3xl bg-blue-50 p-5">
-              <p className="text-xs uppercase tracking-[0.24em] text-blue-600">Status</p>
-              <p className="mt-2 text-sm font-semibold text-blue-900">{statusLabel[selected.status]}</p>
-            </div>
-            <div className="rounded-3xl bg-emerald-50 p-5">
-              <p className="text-xs uppercase tracking-[0.24em] text-emerald-600">Response</p>
-              <p className="mt-2 text-sm font-semibold text-emerald-900">{selected.responseTime} ms</p>
-            </div>
+          <div className="mt-6">
+            <CurveChart
+              points={data.trend || []}
+              valueKey="availability"
+              label="Availability"
+              stroke="#2563eb"
+              fill="rgba(37, 99, 235, 0.12)"
+              formatValue={(value) => `${Number(value || 0).toFixed(2)}%`}
+              renderTooltip={(point) => (
+                <>
+                  <p>Downtime: {formatDuration(point.downtimeMinutes || 0)}</p>
+                  <p>Services reported: {point.servicesReported || 0}</p>
+                </>
+              )}
+              emptyMessage="Analytics trend data will appear once daily metrics are recorded."
+            />
           </div>
         </div>
 
-        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-          <h2 className="text-xl font-semibold text-gray-900">Top service insights</h2>
-          <p className="mt-2 text-sm text-gray-500">Fast comparison of the most important endpoints.</p>
+        <div className="space-y-6">
+          <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
+            <p className="text-sm font-medium uppercase tracking-[0.24em] text-gray-500">Highlights</p>
+            <h2 className="mt-2 text-2xl font-semibold text-gray-900">What stands out</h2>
 
-          <div className="mt-6 space-y-4">
-            <div className="rounded-3xl bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-gray-400">Highest CPU</p>
-              <p className="mt-2 text-sm font-semibold text-gray-900">{topCpu[0].name}</p>
-            </div>
-            <div className="rounded-3xl bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-gray-400">Best uptime</p>
-              <p className="mt-2 text-sm font-semibold text-gray-900">{highestUptime.name}</p>
-            </div>
-            <div className="rounded-3xl bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-gray-400">Slowest response</p>
-              <p className="mt-2 text-sm font-semibold text-gray-900">{slowestResponse.name}</p>
+            <div className="mt-6 space-y-4">
+              <div className="rounded-2xl bg-emerald-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Best service</p>
+                <p className="mt-2 text-lg font-semibold text-emerald-900">{data.highlights?.bestService?.serviceName || 'No data'}</p>
+                {data.highlights?.bestService && <p className="mt-1 text-sm text-emerald-800">{data.highlights.bestService.availability}% availability</p>}
+              </div>
+              <div className="rounded-2xl bg-red-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-700">Most downtime</p>
+                <p className="mt-2 text-lg font-semibold text-red-900">{data.highlights?.mostDowntime?.serviceName || 'No data'}</p>
+                {data.highlights?.mostDowntime && <p className="mt-1 text-sm text-red-800">{formatDuration(data.highlights.mostDowntime.downtimeMinutes)}</p>}
+              </div>
+              <div className="rounded-2xl bg-amber-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Most incidents</p>
+                <p className="mt-2 text-lg font-semibold text-amber-900">{data.highlights?.mostIncidents?.serviceName || 'No data'}</p>
+                {data.highlights?.mostIncidents && <p className="mt-1 text-sm text-amber-800">{data.highlights.mostIncidents.incidentCount} incidents</p>}
+              </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-[0.24em] text-gray-500">Leaderboard</p>
+            <h2 className="mt-2 text-2xl font-semibold text-gray-900">Service performance</h2>
+          </div>
+          <span className="text-sm text-gray-500">{data.leaderboard?.length || 0} services</span>
+        </div>
+
+        <div className="mt-6 overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead>
+              <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                <th className="px-4 py-3">Service</th>
+                <th className="px-4 py-3">Availability</th>
+                <th className="px-4 py-3">Downtime</th>
+                <th className="px-4 py-3">Incidents</th>
+                <th className="px-4 py-3">Checks</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {(data.leaderboard || []).length === 0 && (
+                <tr>
+                  <td className="px-4 py-5 text-gray-500" colSpan="6">
+                    {isLoading ? 'Loading analytics...' : 'No analytics data available yet.'}
+                  </td>
+                </tr>
+              )}
+              {(data.leaderboard || []).map((service) => (
+                <tr key={service.url} className="text-gray-700">
+                  <td className="px-4 py-4">
+                    <p className="font-semibold text-gray-900">{service.serviceName}</p>
+                    <p className="mt-1 text-xs text-gray-500">{service.daysReported} days reported</p>
+                  </td>
+                  <td className="px-4 py-4 font-semibold text-gray-900">{service.availability}%</td>
+                  <td className="px-4 py-4 text-red-700">{formatDuration(service.downtimeMinutes)}</td>
+                  <td className="px-4 py-4">{service.incidentCount}</td>
+                  <td className="px-4 py-4">{service.checks}</td>
+                  <td className="px-4 py-4">
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusTone[service.currentStatus || 'unknown']}`}>
+                      {service.currentStatus || 'unknown'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

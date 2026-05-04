@@ -2,14 +2,16 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Outlet } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Topbar from '../components/Topbar';
+import { clearAuth, getStoredAuthUser, isAuthenticated, isUserAllowed } from '../utils/auth';
 
 const Dashboard = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const isAuthenticated = localStorage.getItem('isAuthenticated');
-    if (!isAuthenticated) {
+    const authUser = getStoredAuthUser();
+    if (!isAuthenticated() || !authUser || !isUserAllowed(authUser.email)) {
+      clearAuth();
       navigate('/');
     }
   }, [navigate]);

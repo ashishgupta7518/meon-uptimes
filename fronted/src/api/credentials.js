@@ -55,6 +55,10 @@ export const sendDownAlert = (url) =>
 
 export const getMonitoringReport = (filters) => requestJson(`/api/monitoring/reports?${toQueryString(filters)}`);
 
+export const getMonitoringTimeseries = (filters) => requestJson(`/api/monitoring/timeseries?${toQueryString(filters)}`);
+
+export const getMonitoringAnalytics = (filters) => requestJson(`/api/monitoring/analytics?${toQueryString(filters)}`);
+
 export const exportMonitoringReport = async (filters) => {
   const response = await fetch(`${API_BASE_URL}/api/monitoring/reports/export?${toQueryString(filters)}`);
   if (!response.ok) {
