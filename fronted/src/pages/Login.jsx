@@ -359,9 +359,9 @@ const Login = () => {
                 </button>
               </form>
 
-              <p className="mt-6 text-sm text-slate-500">
+              {/* <p className="mt-6 text-sm text-slate-500">
                 Demo credentials: <span className="font-semibold text-slate-700">admin@meon.com</span> / <span className="font-semibold text-slate-700">admin123</span>
-              </p>
+              </p> */}
             </div>
           </div>
         </div>

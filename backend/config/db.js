@@ -180,6 +180,13 @@ const initMySqlTables = async () => {
       up_checks INT DEFAULT 0,
       down_checks INT DEFAULT 0,
       warning_checks INT DEFAULT 0,
+      cpu_usage DECIMAL(8,2) NULL,
+      memory_usage DECIMAL(8,2) NULL,
+      disk_usage DECIMAL(8,2) NULL,
+      ram_used_gb DECIMAL(10,2) NULL,
+      response_time_ms INT NULL,
+      http_status INT NULL,
+      status_reason TEXT,
       last_status VARCHAR(32) DEFAULT 'warning',
       last_checked_at DATETIME NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -216,6 +223,13 @@ const initMySqlTables = async () => {
   await ensureColumn('service_status_events', 'metrics', '`metrics` JSON NULL');
   await ensureColumn('service_status_events', 'threshold_breaches', '`threshold_breaches` JSON NULL');
   await ensureColumn('service_status_events', 'status_reason', '`status_reason` TEXT');
+  await ensureColumn('daily_service_metrics', 'cpu_usage', '`cpu_usage` DECIMAL(8,2) NULL');
+  await ensureColumn('daily_service_metrics', 'memory_usage', '`memory_usage` DECIMAL(8,2) NULL');
+  await ensureColumn('daily_service_metrics', 'disk_usage', '`disk_usage` DECIMAL(8,2) NULL');
+  await ensureColumn('daily_service_metrics', 'ram_used_gb', '`ram_used_gb` DECIMAL(10,2) NULL');
+  await ensureColumn('daily_service_metrics', 'response_time_ms', '`response_time_ms` INT NULL');
+  await ensureColumn('daily_service_metrics', 'http_status', '`http_status` INT NULL');
+  await ensureColumn('daily_service_metrics', 'status_reason', '`status_reason` TEXT');
   await ensureIndex(
     'service_status_events',
     'idx_url_ended_started',

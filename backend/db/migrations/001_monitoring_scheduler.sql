@@ -86,6 +86,13 @@ CREATE TABLE IF NOT EXISTS daily_service_metrics (
   up_checks INT DEFAULT 0,
   down_checks INT DEFAULT 0,
   warning_checks INT DEFAULT 0,
+  cpu_usage DECIMAL(8,2) NULL,
+  memory_usage DECIMAL(8,2) NULL,
+  disk_usage DECIMAL(8,2) NULL,
+  ram_used_gb DECIMAL(10,2) NULL,
+  response_time_ms INT NULL,
+  http_status INT NULL,
+  status_reason TEXT,
   last_status VARCHAR(32) DEFAULT 'warning',
   last_checked_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -119,4 +126,13 @@ ALTER TABLE service_status_events
   ADD COLUMN method VARCHAR(16) NULL,
   ADD COLUMN metrics JSON NULL,
   ADD COLUMN threshold_breaches JSON NULL,
+  ADD COLUMN status_reason TEXT;
+
+ALTER TABLE daily_service_metrics
+  ADD COLUMN cpu_usage DECIMAL(8,2) NULL,
+  ADD COLUMN memory_usage DECIMAL(8,2) NULL,
+  ADD COLUMN disk_usage DECIMAL(8,2) NULL,
+  ADD COLUMN ram_used_gb DECIMAL(10,2) NULL,
+  ADD COLUMN response_time_ms INT NULL,
+  ADD COLUMN http_status INT NULL,
   ADD COLUMN status_reason TEXT;

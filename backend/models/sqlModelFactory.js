@@ -58,6 +58,30 @@ const tryParseDateValue = (value) => {
   return value;
 };
 
+const toComparableValue = (value) => {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const numericValue = Number(value);
+    if (!Number.isNaN(numericValue)) {
+      return numericValue;
+    }
+
+    const dateValue = Date.parse(value);
+    if (!Number.isNaN(dateValue)) {
+      return dateValue;
+    }
+  }
+
+  return value;
+};
+
 const normalizeRow = (row, config = {}) => {
   const snakeRow = { ...(row || {}) };
   const normalized = normalizeObjectKeys(snakeRow, toCamelCase);
@@ -127,20 +151,12 @@ const compareValue = (actual, expected) => {
     }
 
     if ('$gte' in expected || '$lte' in expected || '$gt' in expected || '$lt' in expected) {
-      let actualValue;
-      if (actual instanceof Date) {
-        actualValue = actual.getTime();
-      } else if (typeof actual === 'string') {
-        const numericValue = Number(actual);
-        actualValue = Number.isNaN(numericValue) ? Date.parse(actual) : numericValue;
-      } else {
-        actualValue = Number(actual);
-      }
+      const actualValue = toComparableValue(actual);
 
-      if ('$gte' in expected && actualValue < Number(expected.$gte)) return false;
-      if ('$lte' in expected && actualValue > Number(expected.$lte)) return false;
-      if ('$gt' in expected && actualValue <= Number(expected.$gt)) return false;
-      if ('$lt' in expected && actualValue >= Number(expected.$lt)) return false;
+      if ('$gte' in expected && actualValue < toComparableValue(expected.$gte)) return false;
+      if ('$lte' in expected && actualValue > toComparableValue(expected.$lte)) return false;
+      if ('$gt' in expected && actualValue <= toComparableValue(expected.$gt)) return false;
+      if ('$lt' in expected && actualValue >= toComparableValue(expected.$lt)) return false;
       return true;
     }
 

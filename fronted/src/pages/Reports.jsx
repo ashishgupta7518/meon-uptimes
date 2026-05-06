@@ -28,8 +28,11 @@ const statusOptions = [
 
 const sortOptions = [
   { value: 'day', label: 'Date' },
-  { value: 'downtime', label: 'Downtime' },
-  { value: 'availability', label: 'Availability' },
+  { value: 'cpu', label: 'CPU usage' },
+  { value: 'memory', label: 'Memory usage' },
+  { value: 'disk', label: 'Disk usage' },
+  { value: 'ram', label: 'RAM used' },
+  { value: 'response', label: 'Response time' },
   { value: 'checks', label: 'Checks' },
   { value: 'service', label: 'Service' },
 ];
@@ -64,13 +67,34 @@ const baseFilters = {
   sortOrder: 'desc',
 };
 
-const formatDuration = (minutes) => {
-  if (minutes < 60) {
-    return `${minutes}m`;
+const parseNumber = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return null;
   }
-  const hours = Math.floor(minutes / 60);
-  const remaining = minutes % 60;
-  return remaining ? `${hours}h ${remaining}m` : `${hours}h`;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null;
+};
+
+const formatPercent = (value) => {
+  const parsed = parseNumber(value);
+  return parsed === null ? '--' : `${parsed}%`;
+};
+
+const formatGb = (value) => {
+  const parsed = parseNumber(value);
+  return parsed === null ? '--' : `${parsed} GB`;
+};
+
+const formatMs = (value) => {
+  const parsed = parseNumber(value);
+  return parsed === null ? '--' : `${Math.round(parsed)} ms`;
+};
+
+const formatDateTime = (value) => {
+  if (!value) {
+    return '--';
+  }
+  return new Date(value).toLocaleString('en-IN', { hour12: true });
 };
 
 const reportCardTones = [
@@ -162,22 +186,14 @@ const Reports = () => {
     const chips = [];
     if (filters.serviceName) chips.push(filters.serviceName);
     if (filters.status) chips.push(filters.status);
-    if (filters.minAvailability) chips.push(`Min ${filters.minAvailability}%`);
-    if (filters.maxAvailability) chips.push(`Max ${filters.maxAvailability}%`);
-    if (filters.minDowntime) chips.push(`Downtime >= ${filters.minDowntime}m`);
-    if (filters.maxDowntime) chips.push(`Downtime <= ${filters.maxDowntime}m`);
     if (filters.minChecks) chips.push(`Checks >= ${filters.minChecks}`);
     if (filters.maxChecks) chips.push(`Checks <= ${filters.maxChecks}`);
     if (deferredSearch) chips.push(`Search: ${deferredSearch}`);
     return chips;
   }, [
     deferredSearch,
-    filters.maxAvailability,
     filters.maxChecks,
-    filters.maxDowntime,
-    filters.minAvailability,
     filters.minChecks,
-    filters.minDowntime,
     filters.serviceName,
     filters.status,
   ]);
@@ -235,7 +251,7 @@ const Reports = () => {
           <p className="section-kicker">Reporting</p>
           <h1 className="mt-2">Reports</h1>
           <p className="page-copy mt-2 max-w-2xl">
-            Filter by service, status, availability, downtime, and checks. Export the exact filtered dataset in Excel or CSV.
+            Filter by service, status, and date. Each row is a selected-day aggregate with check counts, durations, and latest sampled API values.
           </p>
         </div>
 
@@ -275,9 +291,9 @@ const Reports = () => {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {[
           ['Rows matched', isLoading ? '...' : report.summary?.rows || 0, 'All rows that match your filters.'],
-          ['Downtime', isLoading ? '...' : formatDuration(report.summary?.downtimeMinutes || 0), 'Total downtime across filtered rows.'],
-          ['Availability', isLoading ? '...' : `${Number(report.summary?.averageAvailability || 0).toFixed(2)}%`, 'Weighted availability in this range.'],
-          ['Checks', isLoading ? '...' : report.summary?.checks || 0, 'Health checks recorded for the filtered set.'],
+          ['Avg CPU', isLoading ? '...' : formatPercent(report.summary?.averageCpuUsage), 'Average latest cpu_usage in selected rows.'],
+          ['Avg memory', isLoading ? '...' : formatPercent(report.summary?.averageMemoryUsage), 'Average latest Memory Usage in selected rows.'],
+          ['Avg disk', isLoading ? '...' : formatPercent(report.summary?.averageDiskUsage), 'Average latest Disk usage % in selected rows.'],
         ].map(([label, value, description], index) => (
           <div key={label} className={`surface-card bg-gradient-to-br ${reportCardTones[index]} p-5`}>
             <p className="text-sm font-semibold text-slate-600">{label}</p>
@@ -405,56 +421,6 @@ const Reports = () => {
 
           <div className={`grid gap-4 md:grid-cols-2 xl:grid-cols-4 ${isAdvancedOpen ? 'grid' : 'hidden lg:grid'}`}>
             <label>
-              <span className={inputLabelClass}>Min availability</span>
-              <input
-                value={filters.minAvailability}
-                onChange={(event) => updateFilter('minAvailability', event.target.value)}
-                className="field-control"
-                placeholder="e.g. 95"
-                type="number"
-                min="0"
-                max="100"
-              />
-            </label>
-
-            <label>
-              <span className={inputLabelClass}>Max availability</span>
-              <input
-                value={filters.maxAvailability}
-                onChange={(event) => updateFilter('maxAvailability', event.target.value)}
-                className="field-control"
-                placeholder="e.g. 100"
-                type="number"
-                min="0"
-                max="100"
-              />
-            </label>
-
-            <label>
-              <span className={inputLabelClass}>Min downtime (min)</span>
-              <input
-                value={filters.minDowntime}
-                onChange={(event) => updateFilter('minDowntime', event.target.value)}
-                className="field-control"
-                placeholder="e.g. 5"
-                type="number"
-                min="0"
-              />
-            </label>
-
-            <label>
-              <span className={inputLabelClass}>Max downtime (min)</span>
-              <input
-                value={filters.maxDowntime}
-                onChange={(event) => updateFilter('maxDowntime', event.target.value)}
-                className="field-control"
-                placeholder="e.g. 120"
-                type="number"
-                min="0"
-              />
-            </label>
-
-            <label>
               <span className={inputLabelClass}>Min checks</span>
               <input
                 value={filters.minChecks}
@@ -568,44 +534,59 @@ const Reports = () => {
               <p className="mt-3 break-all text-xs text-slate-500">{metric.url}</p>
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-xs text-slate-400">Downtime</p>
-                  <p className="mt-1 font-semibold text-rose-700">{formatDuration(metric.downtimeMinutes)}</p>
+                  <p className="text-xs text-slate-400">Latest cpu_usage</p>
+                  <p className="mt-1 font-semibold text-slate-900">{formatPercent(metric.cpuUsage)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-400">Availability</p>
-                  <p className="mt-1 font-semibold text-slate-900">{metric.availability}%</p>
+                  <p className="text-xs text-slate-400">Latest Memory Usage</p>
+                  <p className="mt-1 font-semibold text-slate-900">{formatPercent(metric.memoryUsage)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-400">Warning</p>
-                  <p className="mt-1 font-semibold text-amber-700">{formatDuration(metric.warningMinutes)}</p>
+                  <p className="text-xs text-slate-400">Latest Disk usage %</p>
+                  <p className="mt-1 font-semibold text-slate-900">{formatPercent(metric.diskUsage)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Latest ram_used_in_gb</p>
+                  <p className="mt-1 font-semibold text-slate-900">{formatGb(metric.ramUsedGb)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Latest response</p>
+                  <p className="mt-1 font-semibold text-slate-900">{formatMs(metric.responseTimeMs)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-400">Checks</p>
                   <p className="mt-1 font-semibold text-slate-900">{metric.checks}</p>
                 </div>
+                <div className="col-span-2">
+                  <p className="text-xs text-slate-400">Latest checked at</p>
+                  <p className="mt-1 font-semibold text-slate-900">{formatDateTime(metric.lastCheckedAt)}</p>
+                </div>
               </div>
+              {metric.statusReason && <p className="mt-3 text-xs leading-5 text-slate-500">{metric.statusReason}</p>}
             </div>
           ))}
         </div>
 
         <div className="hidden overflow-x-auto md:block">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <table className="min-w-[1320px] divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
-              <tr className="text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              <tr className="text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                 <th className="px-6 py-3">Day</th>
                 <th className="px-6 py-3">Service</th>
                 <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3">Downtime</th>
-                <th className="px-6 py-3">Uptime</th>
-                <th className="px-6 py-3">Warning</th>
-                <th className="px-6 py-3">Availability</th>
+                <th className="px-6 py-3">Latest checked</th>
+                <th className="px-6 py-3">Latest cpu_usage</th>
+                <th className="px-6 py-3">Latest Memory Usage</th>
+                <th className="px-6 py-3">Latest Disk usage %</th>
+                <th className="px-6 py-3">Latest ram_used_in_gb</th>
+                <th className="px-6 py-3">Latest response</th>
                 <th className="px-6 py-3">Checks</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {(report.metrics || []).length === 0 && (
                 <tr>
-                  <td className="px-6 py-5 text-slate-500" colSpan="8">
+                  <td className="px-6 py-5 text-slate-500" colSpan="10">
                     {isLoading ? 'Loading reports...' : 'No report rows match the current filters.'}
                   </td>
                 </tr>
@@ -616,7 +597,8 @@ const Reports = () => {
                   <td className="px-6 py-4 font-medium text-slate-900">{metric.day}</td>
                   <td className="px-6 py-4">
                     <p className="font-semibold text-slate-900">{metric.serviceName}</p>
-                    <p className="mt-1 text-xs text-slate-500">{metric.url}</p>
+                    <p className="mt-1 break-all text-xs leading-5 text-slate-500">{metric.url}</p>
+                    {metric.statusReason && <p className="mt-1 text-xs leading-5 text-slate-400">{metric.statusReason}</p>}
                   </td>
                   <td className="px-6 py-4">
                     <span
@@ -631,10 +613,12 @@ const Reports = () => {
                       {metric.lastStatus}
                     </span>
                   </td>
-                  <td className="px-6 py-4 font-semibold text-rose-700">{formatDuration(metric.downtimeMinutes)}</td>
-                  <td className="px-6 py-4 text-emerald-700">{formatDuration(metric.uptimeMinutes)}</td>
-                  <td className="px-6 py-4 text-amber-700">{formatDuration(metric.warningMinutes)}</td>
-                  <td className="px-6 py-4 font-semibold text-slate-900">{metric.availability}%</td>
+                  <td className="px-6 py-4 text-slate-700">{formatDateTime(metric.lastCheckedAt)}</td>
+                  <td className="px-6 py-4 font-semibold text-slate-900">{formatPercent(metric.cpuUsage)}</td>
+                  <td className="px-6 py-4 font-semibold text-slate-900">{formatPercent(metric.memoryUsage)}</td>
+                  <td className="px-6 py-4 font-semibold text-slate-900">{formatPercent(metric.diskUsage)}</td>
+                  <td className="px-6 py-4 font-semibold text-slate-900">{formatGb(metric.ramUsedGb)}</td>
+                  <td className="px-6 py-4 text-slate-700">{formatMs(metric.responseTimeMs)}</td>
                   <td className="px-6 py-4 text-slate-700">{metric.checks}</td>
                 </tr>
               ))}
