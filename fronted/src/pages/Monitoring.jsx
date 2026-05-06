@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import CurveChart from '../components/CurveChart';
+import Tooltip from '../components/Tooltip';
+import { InfoIcon } from '../components/Icons';
 import { getMonitoringTimeseries } from '../api/credentials';
 import { serviceList } from '../data/services';
 
@@ -9,30 +11,30 @@ const metricConfig = {
   availability: {
     label: 'Availability',
     valueKey: 'availability',
-    stroke: '#0f766e',
-    fill: 'rgba(15, 118, 110, 0.14)',
+    stroke: '#2f57c8',
+    fill: 'rgba(47, 87, 200, 0.12)',
     formatValue: (value) => `${Number(value || 0).toFixed(2)}%`,
   },
   downtimeMinutes: {
     label: 'Downtime',
     valueKey: 'downtimeMinutes',
-    stroke: '#dc2626',
-    fill: 'rgba(220, 38, 38, 0.12)',
+    stroke: '#b22350',
+    fill: 'rgba(178, 35, 80, 0.12)',
     formatValue: (value) => `${Math.round(value || 0)}m`,
   },
   checks: {
     label: 'Checks',
     valueKey: 'checks',
-    stroke: '#2563eb',
-    fill: 'rgba(37, 99, 235, 0.12)',
+    stroke: '#238f63',
+    fill: 'rgba(35, 143, 99, 0.12)',
     formatValue: (value) => `${Math.round(value || 0)}`,
   },
 };
 
 const statusTone = {
-  up: 'bg-emerald-50 text-emerald-700',
-  warning: 'bg-amber-50 text-amber-700',
-  down: 'bg-red-50 text-red-700',
+  up: 'bg-emerald-100 text-emerald-700',
+  warning: 'bg-amber-100 text-amber-700',
+  down: 'bg-rose-100 text-rose-700',
   unknown: 'bg-slate-100 text-slate-600',
 };
 
@@ -87,20 +89,23 @@ const Monitoring = () => {
   const currentMetric = metricConfig[selectedMetric];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Monitoring</h1>
-          <p className="mt-1 text-gray-600">Live service reliability, daily trends, and recent incidents.</p>
+          <p className="section-kicker">Monitoring</p>
+          <h1 className="mt-2">Monitoring</h1>
+          <p className="page-copy mt-2 max-w-2xl">
+            Review day-by-day service performance with smooth curves, incident history, and health summaries for each product.
+          </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Product</span>
+        <div className="surface-card grid gap-3 p-3 sm:grid-cols-2">
+          <label>
+            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Product</span>
             <select
               value={selectedServiceName}
               onChange={(event) => setSelectedServiceName(event.target.value)}
-              className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              className="field-control"
             >
               {serviceList.map((service) => (
                 <option key={service.name} value={service.name}>
@@ -111,14 +116,16 @@ const Monitoring = () => {
           </label>
 
           <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Range</span>
-            <div className="mt-2 flex rounded-2xl border border-gray-200 bg-white p-1 shadow-sm">
+            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Range</span>
+            <div className="grid grid-cols-3 gap-2">
               {rangeOptions.map((option) => (
                 <button
                   key={option}
                   onClick={() => setRangeDays(option)}
-                  className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                    rangeDays === option ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-slate-50'
+                  className={`rounded-2xl px-3 py-3 text-sm font-semibold transition ${
+                    rangeDays === option
+                      ? 'bg-gradient-to-r from-[#3658c8] to-[#b22350] text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                   type="button"
                 >
@@ -131,65 +138,80 @@ const Monitoring = () => {
       </div>
 
       {notice && (
-        <div className="rounded-3xl border border-red-100 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">
+        <div className="surface-card border-rose-100 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
           {notice}
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-4">
-        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-          <p className="text-sm font-medium text-gray-500">Average availability</p>
-          <p className="mt-4 text-4xl font-bold text-gray-900">
-            {isLoading ? '...' : `${Number(data.summary?.averageAvailability || 0).toFixed(2)}%`}
-          </p>
-        </div>
-        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-          <p className="text-sm font-medium text-gray-500">Downtime</p>
-          <p className="mt-4 text-4xl font-bold text-red-600">
-            {isLoading ? '...' : formatDuration(data.summary?.downtimeMinutes || 0)}
-          </p>
-        </div>
-        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-          <p className="text-sm font-medium text-gray-500">Checks captured</p>
-          <p className="mt-4 text-4xl font-bold text-blue-700">{isLoading ? '...' : data.summary?.checks || 0}</p>
-        </div>
-        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-gray-500">Current state</p>
-            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusTone[data.summary?.currentStatus || 'unknown']}`}>
-              {data.summary?.currentStatus || 'unknown'}
-            </span>
-          </div>
-          <p className="mt-4 text-4xl font-bold text-gray-900">{isLoading ? '...' : data.summary?.incidents || 0}</p>
-          <p className="mt-2 text-sm text-gray-500">Recorded incidents in this range.</p>
-        </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: 'Average availability',
+            value: isLoading ? '...' : `${Number(data.summary?.averageAvailability || 0).toFixed(2)}%`,
+            copy: 'Weighted performance for the selected range.',
+          },
+          {
+            label: 'Downtime',
+            value: isLoading ? '...' : formatDuration(data.summary?.downtimeMinutes || 0),
+            copy: 'Total unavailable time recorded for this product.',
+          },
+          {
+            label: 'Checks captured',
+            value: isLoading ? '...' : data.summary?.checks || 0,
+            copy: 'Health checks stored in the monitoring database.',
+          },
+          {
+            label: 'Current state',
+            value: isLoading ? '...' : data.summary?.currentStatus || 'unknown',
+            copy: `${data.summary?.incidents || 0} incidents recorded inside the selected range.`,
+          },
+        ].map(({ label, value, copy }, index) => (
+          <Tooltip >
+            <div className={`surface-card p-5 ${index === 0 ? 'bg-[#eef3ff]' : index === 1 ? 'bg-[#feeff1]' : index === 2 ? 'bg-[#edf8f2]' : 'bg-[#f8f2ff]'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-600">{label}</p>
+                {label === 'Current state' && (
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusTone[data.summary?.currentStatus || 'unknown']}`}>
+                    {data.summary?.currentStatus || 'unknown'}
+                  </span>
+                )}
+              </div>
+              <p className="mt-4 text-3xl font-bold text-slate-900">{value}</p>
+              <p className="mt-2 text-sm text-slate-500">{copy}</p>
+            </div>
+          </Tooltip>
+        ))}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.5fr_0.9fr]">
-        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="grid gap-6 2xl:grid-cols-[1.55fr_0.9fr]">
+        <div className="surface-card overflow-hidden">
+          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-sm font-medium uppercase tracking-[0.24em] text-gray-500">Curve</p>
-              <h2 className="mt-2 text-2xl font-semibold text-gray-900">{data.service?.name || selectedServiceName}</h2>
+              <p className="section-kicker">Performance curve</p>
+              <h2 className="mt-2">{data.service?.name || selectedServiceName}</h2>
+              <p className="page-copy mt-2">Switch the metric to compare availability, downtime, or checks over the selected period.</p>
             </div>
 
             <div className="flex flex-wrap gap-2">
               {Object.entries(metricConfig).map(([key, config]) => (
-                <button
-                  key={key}
-                  onClick={() => setSelectedMetric(key)}
-                  className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${
-                    selectedMetric === key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                  type="button"
-                >
-                  {config.label}
-                </button>
+                <Tooltip >
+                  <button
+                    onClick={() => setSelectedMetric(key)}
+                    className={`rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+                      selectedMetric === key
+                        ? 'bg-gradient-to-r from-[#3658c8] to-[#b22350] text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                    type="button"
+                  >
+                    {config.label}
+                  </button>
+                </Tooltip>
               ))}
             </div>
           </div>
 
-          <div className="mt-6">
+          <div className="px-5 py-5">
             <CurveChart
               points={data.points || []}
               valueKey={currentMetric.valueKey}
@@ -210,44 +232,49 @@ const Monitoring = () => {
         </div>
 
         <div className="space-y-6">
-          <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-            <p className="text-sm font-medium uppercase tracking-[0.24em] text-gray-500">Breakdown</p>
-            <h2 className="mt-2 text-2xl font-semibold text-gray-900">Current range</h2>
+          <div className="surface-card p-5">
+            <div className="flex items-center gap-2">
+              <p className="section-kicker">Breakdown</p>
+              <Tooltip >
+                <InfoIcon className="h-4 w-4 text-slate-400" />
+              </Tooltip>
+            </div>
+            <h2 className="mt-2">Current range</h2>
 
-            <div className="mt-6 space-y-4">
-              <div className="rounded-2xl bg-emerald-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Uptime</p>
-                <p className="mt-2 text-2xl font-semibold text-emerald-900">{formatDuration(data.summary?.uptimeMinutes || 0)}</p>
+            <div className="mt-5 space-y-3">
+              <div className="surface-muted bg-[#edf8f2] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Uptime</p>
+                <p className="mt-2 text-2xl font-bold text-emerald-900">{formatDuration(data.summary?.uptimeMinutes || 0)}</p>
               </div>
-              <div className="rounded-2xl bg-red-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-700">Downtime</p>
-                <p className="mt-2 text-2xl font-semibold text-red-900">{formatDuration(data.summary?.downtimeMinutes || 0)}</p>
+              <div className="surface-muted bg-[#feeff1] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-700">Downtime</p>
+                <p className="mt-2 text-2xl font-bold text-rose-900">{formatDuration(data.summary?.downtimeMinutes || 0)}</p>
               </div>
-              <div className="rounded-2xl bg-amber-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Warning</p>
-                <p className="mt-2 text-2xl font-semibold text-amber-900">{formatDuration(data.summary?.warningMinutes || 0)}</p>
+              <div className="surface-muted bg-[#fff7e8] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Warning</p>
+                <p className="mt-2 text-2xl font-bold text-amber-900">{formatDuration(data.summary?.warningMinutes || 0)}</p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-            <p className="text-sm font-medium uppercase tracking-[0.24em] text-gray-500">Recent incidents</p>
-            <h2 className="mt-2 text-2xl font-semibold text-gray-900">Alert history</h2>
-
-            <div className="mt-6 space-y-4">
+          <div className="surface-card p-5">
+            <p className="section-kicker">Incidents</p>
+            <h2 className="mt-2">Recent incident history</h2>
+            <div className="mt-5 space-y-3">
               {(data.incidents || []).length === 0 && (
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-gray-500">
+                <div className="surface-muted px-4 py-4 text-sm text-slate-500">
                   {isLoading ? 'Loading incidents...' : 'No incidents recorded for this range.'}
                 </div>
               )}
+
               {(data.incidents || []).map((incident) => (
-                <div key={incident._id || incident.startedAt} className="rounded-2xl border border-gray-200 bg-slate-50 p-4">
+                <div key={incident._id || incident.startedAt} className="surface-muted bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">{new Date(incident.startedAt).toLocaleString()}</p>
-                      <p className="mt-1 text-xs text-gray-500">{incident.error || 'Service unavailable'}</p>
+                      <p className="text-sm font-semibold text-slate-900">{new Date(incident.startedAt).toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-slate-500">{incident.error || 'Service unavailable'}</p>
                     </div>
-                    <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">Down</span>
+                    <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">Down</span>
                   </div>
                 </div>
               ))}

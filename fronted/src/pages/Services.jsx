@@ -1,22 +1,29 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fetchServiceStatuses } from '../api/serviceStatus';
 import {
   serviceList,
   statusStyles,
   statusLabel,
-  getRandomValue,
   getStatusFromResult,
   getStatusNote,
   getLastCheckedLabel,
+  getResourceMetrics,
+  getLiveAvailabilityScore,
+  getMetricBarWidth,
+  formatPercentMetric,
+  formatGbMetric,
 } from '../data/services';
 
 const getInitialServices = () =>
-  serviceList.map((service, index) => ({
+  serviceList.map((service) => ({
     ...service,
     status: 'warning',
-    cpu: getRandomValue(34, 2, index),
-    memory: getRandomValue(38, 2, index),
-    uptime: getRandomValue(82, 1, index),
+    cpu: null,
+    memory: null,
+    disk: null,
+    ramGb: null,
+    hasMetrics: false,
+    uptime: null,
     lastChecked: 'Checking...',
     note: 'Checking service response',
   }));
@@ -32,14 +39,16 @@ const Services = () => {
         const statusResults = Array.isArray(data.results) ? data.results : [];
         const mapped = serviceList.map((service, index) => {
           const statusResult = statusResults[index];
-          const isAvailable = statusResult?.ok === true;
-          const isChecking = statusResult?.pending && !statusResult?.checkedAt;
+          const metrics = getResourceMetrics(statusResult);
           return {
             ...service,
             status: getStatusFromResult(statusResult),
-            cpu: isAvailable ? getRandomValue(42, 3, index) : getRandomValue(isChecking ? 34 : 18, 4, index),
-            memory: isAvailable ? getRandomValue(50, 3, index) : getRandomValue(isChecking ? 38 : 28, 4, index),
-            uptime: isAvailable ? getRandomValue(92, 1, index) : isChecking ? getRandomValue(82, 1, index) : 0,
+            cpu: metrics.cpu,
+            memory: metrics.memory,
+            disk: metrics.disk,
+            ramGb: metrics.ramGb,
+            hasMetrics: metrics.hasMetrics,
+            uptime: getLiveAvailabilityScore(statusResult),
             lastChecked: getLastCheckedLabel(statusResult),
             note: getStatusNote(statusResult),
           };
@@ -60,21 +69,23 @@ const Services = () => {
   );
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Services</h1>
-          <p className="text-gray-600 mt-1">Choose a service and view its live metrics, alerts, and health overview.</p>
+          <p className="section-kicker">Service details</p>
+          <h1 className="mt-2">Services</h1>
+          <p className="page-copy mt-2 max-w-2xl">Choose a product and inspect its current health, core metrics, and quick service summary cards.</p>
         </div>
-        <div className="rounded-3xl bg-white p-4 shadow-lg border border-gray-100">
-          <label htmlFor="service-select" className="block text-xs font-semibold uppercase tracking-[0.28em] text-gray-500">
-            Select a product
+
+        <div className="surface-card p-4">
+          <label htmlFor="service-select" className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Select product
           </label>
           <select
             id="service-select"
             value={selectedServiceName}
             onChange={(e) => setSelectedServiceName(e.target.value)}
-            className="mt-3 block w-full rounded-3xl border border-gray-200 bg-slate-50 px-4 py-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            className="field-control min-w-[15rem]"
           >
             {services.map((service) => (
               <option key={service.name} value={service.name}>
@@ -85,114 +96,134 @@ const Services = () => {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.9fr]">
-        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
+      <div className="grid gap-6 2xl:grid-cols-[1.2fr_0.92fr]">
+        <div className="surface-card p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-500 uppercase tracking-[0.24em]">Service summary</p>
-              <h2 className="mt-3 text-2xl font-bold text-gray-900">{selected?.name || 'Loading...'}</h2>
+              <p className="section-kicker">Service summary</p>
+              <h2 className="mt-2">{selected?.name || 'Loading...'}</h2>
+              <p className="page-copy mt-2">{selected?.note || 'Waiting for service details.'}</p>
             </div>
-            <span className={`rounded-full px-4 py-2 text-xs font-semibold ${selected ? statusStyles[selected.status] : 'bg-gray-100 text-gray-500'}`}>
+            <span className={`rounded-full px-4 py-2 text-xs font-semibold ${selected ? statusStyles[selected.status] : 'bg-slate-100 text-slate-500'}`}>
               {selected ? statusLabel[selected.status] : 'Loading'}
             </span>
           </div>
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-3xl bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-gray-400">CPU usage</p>
-              <p className="mt-3 text-3xl font-semibold text-gray-900">{selected?.cpu ?? '--'}%</p>
-            </div>
-            <div className="rounded-3xl bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-gray-400">Memory</p>
-              <p className="mt-3 text-3xl font-semibold text-gray-900">{selected?.memory ?? '--'}%</p>
-            </div>
-            <div className="rounded-3xl bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-gray-400">Uptime</p>
-              <p className="mt-3 text-3xl font-semibold text-gray-900">{selected?.uptime ?? '--'}%</p>
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-3xl bg-blue-50 p-5 border border-blue-100">
-            <p className="text-sm font-medium text-blue-700">Live health</p>
-            <p className="mt-2 text-sm text-blue-700/90">{selected?.note || 'Waiting for service details.'}</p>
-          </div>
-
-          <div className="mt-6 rounded-3xl bg-slate-50 p-5">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-gray-900">Trending metrics</p>
-              <span className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500">Real-time</span>
-            </div>
-            <div className="mt-4 space-y-4">
-              {['CPU', 'Memory', 'Uptime'].map((label, index) => {
-                const value = selected ? [selected.cpu, selected.memory, selected.uptime][index] : 0;
-                return (
-                  <div key={label}>
-                    <div className="flex items-center justify-between text-sm text-gray-700">
-                      <span>{label}</span>
-                      <span>{selected ? `${value}%` : '--'}</span>
-                    </div>
-                    <div className="mt-2 h-3 rounded-full bg-slate-200 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400" style={{ width: `${selected ? value : 0}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-3xl bg-white p-5 border border-gray-100">
-            <h3 className="text-sm font-semibold text-gray-900">Details</h3>
-            <p className="mt-2 text-sm text-gray-500">If the endpoint fails to respond, the service is automatically marked down.</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-gray-400">Last checked</p>
-                <p className="mt-2 text-sm font-semibold text-gray-900">{selected?.lastChecked || '--'}</p>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ['CPU usage', formatPercentMetric(selected?.cpu), '#eef3ff'],
+              ['Memory usage', formatPercentMetric(selected?.memory), '#f8f2ff'],
+              ['Disk usage', formatPercentMetric(selected?.disk), '#fff4e7'],
+              ['RAM used', formatGbMetric(selected?.ramGb), '#edf8f2'],
+            ].map(([label, value, tone]) => (
+              <div key={label} className="surface-muted p-4" style={{ background: tone }}>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+                <p className="mt-3 text-3xl font-bold text-slate-900">{value}</p>
               </div>
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-gray-400">Endpoint</p>
-                <p className="mt-2 text-sm font-semibold text-gray-900 break-all">{selected?.url || '--'}</p>
+            ))}
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+            <div className="surface-muted bg-white p-5">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-900">Trending metrics</p>
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Live</span>
+              </div>
+              <div className="mt-4 space-y-4">
+                {[
+                  ['CPU', selected?.cpu, 'from-[#3658c8] to-[#7c5af2]'],
+                  ['Memory', selected?.memory, 'from-[#b22350] to-[#f06292]'],
+                  ['Disk', selected?.disk, 'from-[#f59e0b] to-[#ef4444]'],
+                ].map(([label, value, barClass]) => {
+                  const width = getMetricBarWidth(value);
+
+                  return (
+                    <div key={label}>
+                      <div className="flex items-center justify-between text-sm text-slate-700">
+                        <span>{label}</span>
+                        <span>{formatPercentMetric(value)}</span>
+                      </div>
+                      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200">
+                        <div className={`h-full rounded-full bg-gradient-to-r ${barClass}`} style={{ width: `${width}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex items-center justify-between text-sm text-slate-700">
+                    <span>RAM used</span>
+                    <span className="font-semibold text-slate-900">{formatGbMetric(selected?.ramGb)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="surface-muted bg-white p-5">
+              <p className="text-sm font-semibold text-slate-900">Details</p>
+              <div className="mt-4 grid gap-3">
+                <div className="surface-muted p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Last checked</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{selected?.lastChecked || '--'}</p>
+                </div>
+                <div className="surface-muted p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Endpoint</p>
+                  <p className="mt-2 break-all text-sm font-semibold text-slate-900">{selected?.url || '--'}</p>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="rounded-3xl bg-white p-6 shadow-lg border border-gray-100">
-          <h2 className="text-xl font-semibold text-gray-900">Quick service view</h2>
-          <p className="mt-2 text-sm text-gray-500">Browse the most important services at a glance.</p>
+        <div className="surface-card p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="section-kicker">Quick view</p>
+              <h2 className="mt-2">Other products</h2>
+            </div>
+            <span className="rounded-full bg-[#eef3ff] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#2f57c8]">
+              {services.length} total
+            </span>
+          </div>
 
-          <div className="mt-6 space-y-4">
-            {services.slice(0, 6).map((service) => (
-              <div key={service.name} className="rounded-3xl border border-gray-200 bg-slate-50 p-4">
+          <div className="mt-5 max-h-[calc(100vh-18rem)] space-y-3 overflow-y-auto pr-1">
+            {services.map((service) => (
+              <button
+                key={service.name}
+                onClick={() => setSelectedServiceName(service.name)}
+                className={`w-full rounded-2xl border p-4 text-left transition ${
+                  service.name === selectedServiceName
+                    ? 'border-[#c6d4fb] bg-[#eef3ff]'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+                type="button"
+              >
                 <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">{service.name}</p>
-                    <p className="mt-1 text-xs text-gray-500 truncate">{service.url}</p>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{service.name}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{service.url}</p>
                   </div>
-                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[service.status]}`}>
+                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[service.status]}`}>
                     {statusLabel[service.status]}
                   </span>
                 </div>
                 <div className="mt-4 space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.24em] text-gray-400">
-                      <span>CPU</span>
-                      <span>{service.cpu}%</span>
+                  {[
+                    ['CPU', service.cpu, 'from-[#3658c8] to-[#7c5af2]'],
+                    ['Memory', service.memory, 'from-[#b22350] to-[#f06292]'],
+                    ['Disk', service.disk, 'from-[#f59e0b] to-[#ef4444]'],
+                  ].map(([label, value, tone]) => (
+                    <div key={label}>
+                      <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        <span>{label}</span>
+                        <span>{formatPercentMetric(value)}</span>
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                        <div className={`h-full rounded-full bg-gradient-to-r ${tone}`} style={{ width: `${getMetricBarWidth(value)}%` }} />
+                      </div>
                     </div>
-                    <div className="mt-2 h-2 rounded-full bg-slate-200 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400" style={{ width: `${service.cpu}%` }} />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.24em] text-gray-400">
-                      <span>Memory</span>
-                      <span>{service.memory}%</span>
-                    </div>
-                    <div className="mt-2 h-2 rounded-full bg-slate-200 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400" style={{ width: `${service.memory}%` }} />
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>

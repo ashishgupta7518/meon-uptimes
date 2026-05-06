@@ -10,7 +10,7 @@ const getServiceInput = (item) => {
   if (typeof item === 'string') {
     return { name: item, url: item };
   }
-  return { name: item.name || item.url, url: item.url };
+  return { name: item.serviceName || item.name || item.url, url: item.url };
 };
 
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();

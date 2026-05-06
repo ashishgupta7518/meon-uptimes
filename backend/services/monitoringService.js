@@ -3,7 +3,7 @@ const DailyServiceMetric = require('../models/DailyServiceMetric');
 const ServiceAlertMapping = require('../models/ServiceAlertMapping');
 const ServiceState = require('../models/ServiceState');
 const ServiceStatusEvent = require('../models/ServiceStatusEvent');
-const { sendDownAlertEmail } = require('./smtpService');
+const { sendDownAlertEmail, sendServiceRecoveredEmail } = require('./smtpService');
 const {
   buildDayList,
   csvCell,
@@ -25,11 +25,25 @@ const checkFieldByStatus = {
   down: 'downChecks',
 };
 
+const DOWN_ALERT_COOLDOWN_MS = Number(process.env.MONITOR_DOWN_ALERT_COOLDOWN_MS) || 0;
+
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const getStatusType = (result) => {
+  if (['up', 'warning', 'down'].includes(result?.statusType)) {
+    return result.statusType;
+  }
+
   if (result.ok !== true) {
     return 'down';
   }
-  return result.slow ? 'warning' : 'up';
+  return 'up';
 };
 
 const formatMetric = (metric) => {
@@ -40,7 +54,7 @@ const formatMetric = (metric) => {
   const availability = trackedMs > 0 ? (uptimeMs / trackedMs) * 100 : 0;
 
   return {
-    id: metric._id,
+    id: metric.id || metric._id,
     serviceName: metric.serviceName,
     url: metric.url,
     day: metric.day,
@@ -124,36 +138,67 @@ const addCheckToDailyMetric = async (service, status, checkedAt) => {
   );
 };
 
-const recordServiceStatus = async (result) => {
+const getTimeValue = (value) => {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const shouldSendDownReminder = (state, checkedAt) => {
+  if (DOWN_ALERT_COOLDOWN_MS <= 0) {
+    return false;
+  }
+
+  const lastDownAlertTime = getTimeValue(state?.lastDownAlertAt || state?.lastAlertAt);
+  return !lastDownAlertTime || checkedAt.getTime() - lastDownAlertTime >= DOWN_ALERT_COOLDOWN_MS;
+};
+
+const recordServiceStatus = async (result, options = {}) => {
   if (!result?.url || !result?.checkedAt) {
     return;
   }
 
+  const allowAlerts = options.allowAlerts === true;
   const checkedAt = new Date(result.checkedAt);
   const service = { name: result.name || result.url, url: result.url };
   const status = getStatusType(result);
   const state = await ServiceState.findOne({ url: service.url });
+  const previousStatus = state?.lastStatus || null;
 
   if (state?.lastCheckedAt) {
     await addDurationToDailyMetric(service, state.lastStatus, state.lastCheckedAt, checkedAt);
   }
   await addCheckToDailyMetric(service, status, checkedAt);
 
-  const activeEvent = await ServiceStatusEvent.findOne({ url: service.url, endedAt: null }).sort({ startedAt: -1 });
+  const eventUpdate = {
+    checkedAt,
+    httpStatus: result.status || null,
+    method: result.method || 'GET',
+    responseTimeMs: result.responseTimeMs,
+    error: result.error || null,
+    metrics: result.metrics || null,
+    thresholdBreaches: result.thresholdBreaches || [],
+    statusReason: result.reason || result.error || null,
+  };
+
+  const activeEvent = (
+    await ServiceStatusEvent.find({ url: service.url, endedAt: null }).sort({ startedAt: -1 }).limit(1).lean()
+  )[0] || null;
   if (!activeEvent) {
     await ServiceStatusEvent.create({
       serviceName: service.name,
       url: service.url,
       status,
       startedAt: checkedAt,
-      checkedAt,
-      responseTimeMs: result.responseTimeMs,
-      error: result.error,
+      ...eventUpdate,
     });
   } else if (activeEvent.status !== status) {
     activeEvent.endedAt = checkedAt;
     activeEvent.durationMs = Math.max(0, checkedAt.getTime() - activeEvent.startedAt.getTime());
-    activeEvent.checkedAt = checkedAt;
+    Object.assign(activeEvent, eventUpdate);
     await activeEvent.save();
 
     await ServiceStatusEvent.create({
@@ -161,29 +206,53 @@ const recordServiceStatus = async (result) => {
       url: service.url,
       status,
       startedAt: checkedAt,
-      checkedAt,
-      responseTimeMs: result.responseTimeMs,
-      error: result.error,
+      ...eventUpdate,
     });
   } else {
-    activeEvent.checkedAt = checkedAt;
-    activeEvent.responseTimeMs = result.responseTimeMs;
-    activeEvent.error = result.error;
+    Object.assign(activeEvent, eventUpdate);
     await activeEvent.save();
   }
 
-  const shouldSendDownAlert = status === 'down' && (!state || state.lastStatus !== 'down' || !state.downAlertSent);
   let downAlertSent = status === 'down' ? Boolean(state?.downAlertSent) : false;
   let lastAlertAt = state?.lastAlertAt;
+  let lastDownAlertAt = state?.lastDownAlertAt;
+  let lastRecoveryAlertAt = state?.lastRecoveryAlertAt;
+
+  const isDownTransition = status === 'down' && previousStatus !== 'down';
+  const isDownReminderDue = status === 'down' && previousStatus === 'down' && shouldSendDownReminder(state, checkedAt);
+  const shouldSendDownAlert = allowAlerts && (isDownTransition || isDownReminderDue);
 
   if (shouldSendDownAlert) {
+    lastDownAlertAt = checkedAt;
     try {
       const mailResult = await sendDownAlertEmail(service, result);
-      downAlertSent = mailResult.sent;
+      downAlertSent = mailResult.sent || downAlertSent;
       lastAlertAt = mailResult.sent ? checkedAt : lastAlertAt;
+      console.log(
+        `[monitor] DOWN alert ${mailResult.sent ? 'sent' : 'not sent'} for ${service.name}: ${mailResult.error || `${mailResult.recipients} recipient(s)`}`
+      );
     } catch (error) {
       console.error(`Failed to send down alert for ${service.name}:`, error.message);
     }
+  }
+
+  const shouldSendRecoveryAlert = allowAlerts && previousStatus === 'down' && status !== 'down';
+  if (shouldSendRecoveryAlert) {
+    downAlertSent = false;
+    try {
+      const mailResult = await sendServiceRecoveredEmail(service, result);
+      lastRecoveryAlertAt = mailResult.sent ? checkedAt : lastRecoveryAlertAt;
+      lastAlertAt = mailResult.sent ? checkedAt : lastAlertAt;
+      console.log(
+        `[monitor] RECOVERY alert ${mailResult.sent ? 'sent' : 'not sent'} for ${service.name}: ${mailResult.error || `${mailResult.recipients} recipient(s)`}`
+      );
+    } catch (error) {
+      console.error(`Failed to send recovery alert for ${service.name}:`, error.message);
+    }
+  }
+
+  if (status !== 'down') {
+    downAlertSent = false;
   }
 
   await ServiceState.updateOne(
@@ -194,15 +263,34 @@ const recordServiceStatus = async (result) => {
         url: service.url,
         lastStatus: status,
         lastCheckedAt: checkedAt,
+        httpStatus: result.status || null,
+        method: result.method || 'GET',
+        responseTimeMs: result.responseTimeMs || null,
+        error: result.error || null,
+        metrics: result.metrics || null,
+        thresholdBreaches: result.thresholdBreaches || [],
+        lastStatusReason: result.reason || result.error || null,
         downAlertSent,
         lastAlertAt,
+        lastDownAlertAt,
+        lastRecoveryAlertAt,
       },
     },
     { upsert: true }
   );
 };
 
-const buildMetricMatch = ({ from, to, serviceName, search }) => {
+const normalizeNumberFilter = (value) => {
+  if (value === '' || value === undefined || value === null) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeSortDirection = (value) => (String(value || '').toLowerCase() === 'asc' ? 'asc' : 'desc');
+
+const buildMetricMatch = ({ from, to, serviceName, search, status }) => {
   const metricMatch = {
     day: { $gte: from, $lte: to },
   };
@@ -216,108 +304,203 @@ const buildMetricMatch = ({ from, to, serviceName, search }) => {
     metricMatch.$or = [{ serviceName: pattern }, { url: pattern }];
   }
 
+  if (status) {
+    metricMatch.lastStatus = status;
+  }
+
   return metricMatch;
 };
 
-const buildEventMatch = ({ from, to, serviceName, search }) => {
-  const eventMatch = {
-    status: 'down',
-    startedAt: { $lt: dateFromDay(to, 1) },
-    $or: [{ endedAt: null }, { endedAt: { $gte: dateFromDay(from) } }],
-  };
-
-  if (serviceName) {
-    eventMatch.serviceName = serviceName;
-  }
-
-  if (search) {
-    const pattern = new RegExp(search, 'i');
-    eventMatch.$and = [{ $or: [{ serviceName: pattern }, { url: pattern }] }];
-  }
-
-  return eventMatch;
+const sortComparators = {
+  day: (left, right) => String(left.day).localeCompare(String(right.day)),
+  service: (left, right) => String(left.serviceName).localeCompare(String(right.serviceName)),
+  availability: (left, right) => left.availability - right.availability,
+  downtime: (left, right) => left.downtimeMinutes - right.downtimeMinutes,
+  uptime: (left, right) => left.uptimeMinutes - right.uptimeMinutes,
+  warning: (left, right) => left.warningMinutes - right.warningMinutes,
+  checks: (left, right) => left.checks - right.checks,
+  status: (left, right) => String(left.lastStatus || '').localeCompare(String(right.lastStatus || '')),
 };
+
+const applyMetricFilters = (metrics, filters) =>
+  metrics.filter((metric) => {
+    if (filters.minAvailability !== null && metric.availability < filters.minAvailability) {
+      return false;
+    }
+    if (filters.maxAvailability !== null && metric.availability > filters.maxAvailability) {
+      return false;
+    }
+    if (filters.minDowntime !== null && metric.downtimeMinutes < filters.minDowntime) {
+      return false;
+    }
+    if (filters.maxDowntime !== null && metric.downtimeMinutes > filters.maxDowntime) {
+      return false;
+    }
+    if (filters.minChecks !== null && metric.checks < filters.minChecks) {
+      return false;
+    }
+    if (filters.maxChecks !== null && metric.checks > filters.maxChecks) {
+      return false;
+    }
+    return true;
+  });
+
+const sortMetrics = (metrics, sortBy, sortOrder) => {
+  const comparator = sortComparators[sortBy] || sortComparators.day;
+  const sorted = [...metrics].sort((left, right) => comparator(left, right));
+  return sortOrder === 'asc' ? sorted : sorted.reverse();
+};
+
+const buildReportSummary = (metrics) => {
+  const totals = metrics.reduce(
+    (accumulator, metric) => ({
+      rows: accumulator.rows + 1,
+      uptimeMs: accumulator.uptimeMs + (metric.uptimeMs || 0),
+      downtimeMs: accumulator.downtimeMs + (metric.downtimeMs || 0),
+      warningMs: accumulator.warningMs + (metric.warningMs || 0),
+      checks: accumulator.checks + (metric.checks || 0),
+    }),
+    { rows: 0, uptimeMs: 0, downtimeMs: 0, warningMs: 0, checks: 0 }
+  );
+
+  const trackedMs = totals.uptimeMs + totals.downtimeMs + totals.warningMs;
+  const averageAvailability = trackedMs > 0 ? (totals.uptimeMs / trackedMs) * 100 : 0;
+
+  return {
+    rows: totals.rows,
+    downtimeMinutes: Math.round(totals.downtimeMs / 60000),
+    uptimeMinutes: Math.round(totals.uptimeMs / 60000),
+    warningMinutes: Math.round(totals.warningMs / 60000),
+    checks: totals.checks,
+    averageAvailability: Number(averageAvailability.toFixed(2)),
+  };
+};
+
+const getReportFilters = (query = {}) => ({
+  search: String(query.search || '').trim(),
+  serviceName: String(query.serviceName || '').trim(),
+  status: ['up', 'down', 'warning', 'unknown'].includes(String(query.status || '').trim())
+    ? String(query.status || '').trim()
+    : '',
+  minAvailability: normalizeNumberFilter(query.minAvailability),
+  maxAvailability: normalizeNumberFilter(query.maxAvailability),
+  minDowntime: normalizeNumberFilter(query.minDowntime),
+  maxDowntime: normalizeNumberFilter(query.maxDowntime),
+  minChecks: normalizeNumberFilter(query.minChecks),
+  maxChecks: normalizeNumberFilter(query.maxChecks),
+  sortBy: String(query.sortBy || 'day').trim(),
+  sortOrder: normalizeSortDirection(query.sortOrder),
+});
+
+const buildReportRows = (metrics) => [
+  ['Day', 'Service', 'URL', 'Status', 'Downtime Minutes', 'Uptime Minutes', 'Warning Minutes', 'Availability %', 'Checks', 'Down Checks'],
+  ...metrics.map((metric) => [
+    metric.day,
+    metric.serviceName,
+    metric.url,
+    metric.lastStatus,
+    metric.downtimeMinutes,
+    metric.uptimeMinutes,
+    metric.warningMinutes,
+    metric.availability,
+    metric.checks,
+    metric.downChecks,
+  ]),
+];
+
+const buildExcelDocument = (rows, title) => `
+  <html>
+    <head>
+      <meta charset="utf-8" />
+    </head>
+    <body>
+      <table border="1">
+        <tr>
+          <th colspan="${rows[0]?.length || 1}" style="background:#2f57c8;color:#ffffff;font-weight:bold;">${escapeHtml(title)}</th>
+        </tr>
+        ${rows
+          .map(
+            (row, rowIndex) => `
+              <tr>
+                ${row
+                  .map((cell) => {
+                    const tag = rowIndex === 0 ? 'th' : 'td';
+                    const background = rowIndex === 0 ? ' style="background:#eef3ff;font-weight:bold;"' : '';
+                    return `<${tag}${background}>${escapeHtml(cell)}</${tag}>`;
+                  })
+                  .join('')}
+              </tr>
+            `
+          )
+          .join('')}
+      </table>
+    </body>
+  </html>
+`;
 
 const getReportData = async (query = {}) => {
   const { from, to } = resolveDateRange(query);
   const page = Math.max(1, Number(query.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 10));
-  const search = String(query.search || '').trim();
-  const metricMatch = buildMetricMatch({ from, to, serviceName: query.serviceName, search });
-  const eventMatch = buildEventMatch({ from, to, serviceName: query.serviceName, search });
+  const filters = getReportFilters(query);
   const skip = (page - 1) * limit;
+  const metricMatch = buildMetricMatch({
+    from,
+    to,
+    serviceName: filters.serviceName,
+    search: filters.search,
+    status: filters.status,
+  });
 
-  const [total, metrics, summaryRows, incidents] = await Promise.all([
-    DailyServiceMetric.countDocuments(metricMatch),
-    DailyServiceMetric.find(metricMatch).sort({ day: -1, serviceName: 1 }).skip(skip).limit(limit).lean(),
-    DailyServiceMetric.aggregate([
-      { $match: metricMatch },
-      {
-        $group: {
-          _id: null,
-          rows: { $sum: 1 },
-          uptimeMs: { $sum: '$uptimeMs' },
-          downtimeMs: { $sum: '$downtimeMs' },
-          warningMs: { $sum: '$warningMs' },
-          checks: { $sum: '$checks' },
-        },
-      },
-    ]),
-    ServiceStatusEvent.find(eventMatch).sort({ startedAt: -1 }).limit(8).lean(),
-  ]);
-
-  const summary = summaryRows[0] || { rows: 0, uptimeMs: 0, downtimeMs: 0, warningMs: 0, checks: 0 };
-  const trackedMs = summary.uptimeMs + summary.downtimeMs + summary.warningMs;
-  const averageAvailability = trackedMs > 0 ? (summary.uptimeMs / trackedMs) * 100 : 0;
+  const rawMetrics = await DailyServiceMetric.find(metricMatch).lean();
+  const formattedMetrics = rawMetrics.map(formatMetric);
+  const filteredMetrics = applyMetricFilters(formattedMetrics, filters);
+  const sortedMetrics = sortMetrics(filteredMetrics, filters.sortBy, filters.sortOrder);
+  const paginatedMetrics = sortedMetrics.slice(skip, skip + limit);
+  const summary = buildReportSummary(filteredMetrics);
+  const total = filteredMetrics.length;
 
   return {
-    filters: { from, to, serviceName: query.serviceName || '', search },
+    filters: { from, to, ...filters },
     pagination: {
       page,
       limit,
       total,
       totalPages: Math.max(1, Math.ceil(total / limit)),
     },
-    summary: {
-      rows: summary.rows,
-      downtimeMinutes: Math.round(summary.downtimeMs / 60000),
-      uptimeMinutes: Math.round(summary.uptimeMs / 60000),
-      warningMinutes: Math.round(summary.warningMs / 60000),
-      checks: summary.checks,
-      averageAvailability: Number(averageAvailability.toFixed(2)),
-    },
-    metrics: metrics.map(formatMetric),
-    incidents,
+    summary,
+    metrics: paginatedMetrics,
+    incidents: [],
   };
 };
 
 const getReportExport = async (query = {}) => {
   const { from, to } = resolveDateRange(query);
-  const search = String(query.search || '').trim();
-  const metricMatch = buildMetricMatch({ from, to, serviceName: query.serviceName, search });
-  const metrics = await DailyServiceMetric.find(metricMatch).sort({ day: -1, serviceName: 1 }).lean();
-  const rows = [
-    ['Day', 'Service', 'URL', 'Downtime Minutes', 'Uptime Minutes', 'Warning Minutes', 'Availability %', 'Checks', 'Down Checks', 'Last Status'],
-    ...metrics.map((metric) => {
-      const formatted = formatMetric(metric);
-      return [
-        formatted.day,
-        formatted.serviceName,
-        formatted.url,
-        formatted.downtimeMinutes,
-        formatted.uptimeMinutes,
-        formatted.warningMinutes,
-        formatted.availability,
-        formatted.checks,
-        formatted.downChecks,
-        formatted.lastStatus,
-      ];
-    }),
-  ];
+  const filters = getReportFilters(query);
+  const metricMatch = buildMetricMatch({
+    from,
+    to,
+    serviceName: filters.serviceName,
+    search: filters.search,
+    status: filters.status,
+  });
+  const rawMetrics = await DailyServiceMetric.find(metricMatch).lean();
+  const metrics = sortMetrics(applyMetricFilters(rawMetrics.map(formatMetric), filters), filters.sortBy, filters.sortOrder);
+  const rows = buildReportRows(metrics);
+  const format = String(query.format || 'excel').toLowerCase() === 'csv' ? 'csv' : 'excel';
+
+  if (format === 'csv') {
+    return {
+      type: 'csv',
+      filename: `downtime-report-${from}-to-${to}.csv`,
+      content: rows.map((row) => row.map((cell) => csvCell(cell)).join(',')).join('\n'),
+    };
+  }
 
   return {
-    filename: `downtime-report-${from}-to-${to}.csv`,
-    csv: rows.map((row) => row.map(csvCell).join(',')).join('\n'),
+    type: 'excel',
+    filename: `downtime-report-${from}-to-${to}.xls`,
+    content: buildExcelDocument(rows, `Downtime Report ${from} to ${to}`),
   };
 };
 
@@ -489,36 +672,6 @@ const getMonitoringAnalytics = async (query = {}) => {
   };
 };
 
-const sendManualDownAlerts = async (urls = []) => {
-  const services = DEFAULT_SERVICES.filter((service) => urls.includes(service.url));
-  const results = [];
-
-  for (const service of services) {
-    try {
-      const result = {
-        checkedAt: Date.now(),
-        error: 'Manual alert triggered from dashboard',
-      };
-      const mailResult = await sendDownAlertEmail(service, result);
-      results.push({
-        name: service.name,
-        url: service.url,
-        sent: mailResult.sent,
-        recipients: mailResult.recipients,
-      });
-    } catch (error) {
-      results.push({
-        name: service.name,
-        url: service.url,
-        sent: false,
-        error: error.message,
-      });
-    }
-  }
-
-  return results;
-};
-
 module.exports = {
   formatMetric,
   getMonitoringAnalytics,
@@ -527,5 +680,4 @@ module.exports = {
   getReportExport,
   recordServiceStatus,
   resolveDateRange,
-  sendManualDownAlerts,
 };

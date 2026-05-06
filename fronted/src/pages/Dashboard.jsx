@@ -9,26 +9,48 @@ const Dashboard = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    console.log('[Dashboard] Auth check started');
     const authUser = getStoredAuthUser();
-    if (!isAuthenticated() || !authUser || !isUserAllowed(authUser.email)) {
+    const isAuth = isAuthenticated();
+    console.log('[Dashboard] isAuthenticated:', isAuth);
+    console.log('[Dashboard] authUser:', authUser);
+    
+    if (!isAuth) {
+      console.log('[Dashboard] Not authenticated, redirecting to /');
       clearAuth();
       navigate('/');
+      return;
     }
+
+    if (!authUser) {
+      console.log('[Dashboard] No stored auth user, redirecting to /');
+      clearAuth();
+      navigate('/');
+      return;
+    }
+
+    const userAllowed = isUserAllowed(authUser.email);
+    console.log('[Dashboard] User allowed:', userAllowed);
+    
+    if (!userAllowed) {
+      console.log('[Dashboard] User not allowed, redirecting to /');
+      clearAuth();
+      navigate('/');
+      return;
+    }
+
+    console.log('[Dashboard] User authenticated and allowed');
   }, [navigate]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100">
-      {/* Sidebar - fixed on all screens */}
+    <div className="min-h-screen bg-[#f4f6fb]">
       <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
 
-      {/* Main content with margin for fixed sidebar */}
-      <div className="flex flex-col min-h-screen lg:ml-64">
-        {/* Topbar */}
+      <div className="flex min-h-screen flex-col lg:ml-[18rem]">
         <Topbar setIsSidebarOpen={setIsSidebarOpen} />
 
-        {/* Page content */}
-        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-transparent">
-          <div className="w-full px-6 py-8 lg:px-10 xl:px-12">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto">
+          <div className="w-full px-4 py-6 sm:px-6 lg:px-8 xl:px-10 animate-fade-in-up">
             <Outlet />
           </div>
         </main>

@@ -1,13 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import BrandLogo from './BrandLogo';
+import Tooltip from './Tooltip';
+import { BellIcon, ChevronDownIcon, MenuIcon, SearchIcon } from './Icons';
 import { clearAuth, getStoredAuthUser } from '../utils/auth';
-import { SearchIcon, UserIcon } from './Icons';
+
+const getInitials = (name, email) => {
+  const source = String(name || email || 'Admin').trim();
+  const [first = 'A', second = ''] = source.split(/\s+/);
+  return `${first[0] || 'A'}${second[0] || ''}`.toUpperCase();
+};
 
 const Topbar = ({ setIsSidebarOpen }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const profileRef = useRef(null);
   const navigate = useNavigate();
   const user = getStoredAuthUser() || { name: 'Admin User', email: 'admin@meon.com' };
+  const initials = useMemo(() => getInitials(user.name, user.email), [user.email, user.name]);
 
   useEffect(() => {
     if (!isProfileOpen) {
@@ -21,9 +30,7 @@ const Topbar = ({ setIsSidebarOpen }) => {
     };
 
     window.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      window.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => window.removeEventListener('mousedown', handleClickOutside);
   }, [isProfileOpen]);
 
   const handleLogout = () => {
@@ -32,72 +39,90 @@ const Topbar = ({ setIsSidebarOpen }) => {
   };
 
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200 lg:static lg:overflow-y-visible">
-      <div className="mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="relative flex justify-between items-center py-4">
-          <div className="flex items-center lg:hidden">
+    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-3">
+          <Tooltip  align="left">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              className="soft-button inline-flex h-11 w-11 items-center justify-center lg:hidden"
               type="button"
             >
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
+              <MenuIcon className="h-5 w-5" />
             </button>
-          </div>
+          </Tooltip>
 
-          <div className="flex-1 flex justify-center px-2 lg:ml-0 lg:justify-end">
-            <div className="max-w-lg w-full lg:max-w-xs">
-              <label htmlFor="search" className="sr-only">Search</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  <SearchIcon className="h-5 w-5" />
-                </div>
-                <input
-                  id="search"
-                  name="search"
-                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="Search..."
-                  type="search"
-                />
+          <div className="lg:hidden">
+            <BrandLogo compact subtitle="Monitoring" />
+          </div>
+        </div>
+
+        <div className="hidden min-w-0 flex-1 md:block">
+          <div className="mx-auto max-w-xl">
+            <label htmlFor="dashboard-search" className="sr-only">
+              Search
+            </label>
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
+                <SearchIcon className="h-4 w-4" />
               </div>
+              <input
+                id="dashboard-search"
+                name="dashboard-search"
+                type="search"
+                className="field-control pl-11"
+                placeholder="Search products, reports, or recipients"
+              />
             </div>
           </div>
+        </div>
 
-          <div ref={profileRef} className="ml-4 relative flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Tooltip content="Notifications">
+            <button
+              type="button"
+              className="soft-button inline-flex h-11 w-11 items-center justify-center border-slate-200 text-slate-600"
+            >
+              <BellIcon className="h-5 w-5" />
+            </button>
+          </Tooltip>
+
+          <div ref={profileRef} className="relative">
             <button
               onClick={() => setIsProfileOpen((current) => !current)}
-              className="bg-white rounded-full flex items-center justify-center p-1 text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="inline-flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-2.5 py-1.5 text-left shadow-sm"
               type="button"
             >
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white">
-                <UserIcon className="h-5 w-5" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eddcff] text-sm font-bold text-[#9345d6]">
+                {initials}
               </div>
+              <div className="hidden max-w-[11rem] sm:block">
+                <p className="truncate text-sm font-semibold text-slate-900">{user.name || 'Admin User'}</p>
+                <p className="truncate text-xs text-slate-500">{user.email || 'admin@meon.com'}</p>
+              </div>
+              <ChevronDownIcon className="h-4 w-4 text-slate-500" />
             </button>
 
             {isProfileOpen && (
-              <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
-                <div className="py-1">
-                  <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-200">
-                    <div className="font-medium">{user.name || 'Admin User'}</div>
-                    <div className="text-gray-500">{user.email || 'admin@meon.com'}</div>
-                  </div>
-                  <button
-                    onClick={() => setIsProfileOpen(false)}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                    type="button"
-                  >
-                    Profile Settings
-                  </button>
-                  <button
-                    onClick={handleLogout}
-                    className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                    type="button"
-                  >
-                    Sign out
-                  </button>
+              <div className="surface-card absolute right-0 mt-3 w-60 overflow-hidden py-2">
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-900">{user.name || 'Admin User'}</p>
+                  <p className="mt-1 text-xs text-slate-500">{user.email || 'admin@meon.com'}</p>
                 </div>
+                <button
+                  onClick={() => setIsProfileOpen(false)}
+                  className="block w-full px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  type="button"
+                >
+                  Profile Settings
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="block w-full px-4 py-3 text-left text-sm font-medium text-rose-600 transition hover:bg-rose-50"
+                  type="button"
+                >
+                  Sign out
+                </button>
               </div>
             )}
           </div>

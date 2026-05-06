@@ -47,12 +47,6 @@ export const saveAlertMappings = (mappings) =>
     body: JSON.stringify({ mappings }),
   });
 
-export const sendDownAlert = (url) =>
-  requestJson('/api/alert-mappings/send-down-alerts', {
-    method: 'POST',
-    body: JSON.stringify({ url }),
-  });
-
 export const getMonitoringReport = (filters) => requestJson(`/api/monitoring/reports?${toQueryString(filters)}`);
 
 export const getMonitoringTimeseries = (filters) => requestJson(`/api/monitoring/timeseries?${toQueryString(filters)}`);
@@ -65,5 +59,10 @@ export const exportMonitoringReport = async (filters) => {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error || `Export failed with ${response.status}`);
   }
-  return response.blob();
+  const disposition = response.headers.get('content-disposition') || '';
+  const match = disposition.match(/filename="([^"]+)"/i);
+  return {
+    blob: await response.blob(),
+    filename: match?.[1] || 'downtime-report',
+  };
 };

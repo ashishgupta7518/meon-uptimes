@@ -1,426 +1,325 @@
-/**
- * Email template utilities for Meon Uptime
- * Generates beautiful, professional HTML emails for alerts and notifications
- */
-const buildDownAlertEmailTemplate = (service, result) => {
-  const checkedAt = new Date(result.checkedAt).toLocaleString();
-  const errorText = result.error || 'No response from service';
+const DASHBOARD_URL = process.env.APP_DASHBOARD_URL || 'http://localhost:5173/dashboard';
 
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const formatDateTime = (value) => new Date(value || Date.now()).toLocaleString('en-IN', { hour12: true });
+
+const buildRowsHtml = (rows) =>
+  rows
+    .map(
+      (row) => `
+        <tr>
+          <td class="label">${escapeHtml(row.label)}</td>
+          <td class="value">${escapeHtml(row.value)}</td>
+        </tr>
+      `
+    )
+    .join('');
+
+const buildBaseTemplate = ({
+  eyebrow,
+  title,
+  subtitle,
+  statusLabel,
+  accentFrom,
+  accentTo,
+  badgeBackground,
+  badgeText,
+  rows,
+  panelTitle,
+  panelBody,
+  footerTitle = 'Meon Uptime',
+  ctaLabel = 'Open Dashboard',
+  ctaUrl = DASHBOARD_URL,
+}) => {
   const html = `
     <!DOCTYPE html>
     <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <style>
+          body {
+            margin: 0;
+            padding: 24px 12px;
+            background: #f4f6fb;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #1f2937;
+          }
+          .shell {
+            max-width: 680px;
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid #e5eaf3;
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+          }
+          .hero {
+            background: linear-gradient(135deg, ${accentFrom}, ${accentTo});
+            padding: 32px 28px;
+            color: #ffffff;
+          }
+          .eyebrow {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            opacity: 0.82;
+          }
+          .hero h1 {
+            margin: 12px 0 8px;
+            font-size: 28px;
+            line-height: 1.2;
+          }
+          .hero p {
+            margin: 0;
+            font-size: 15px;
+            line-height: 1.7;
+            color: rgba(255, 255, 255, 0.9);
+          }
+          .body {
+            padding: 28px;
+          }
+          .badge {
+            display: inline-block;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: ${badgeBackground};
+            color: ${badgeText};
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+          }
+          .card {
+            margin-top: 20px;
+            border: 1px solid #e5eaf3;
+            border-radius: 18px;
+            overflow: hidden;
+            background: #fbfcff;
+          }
+          .table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+          .table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #edf1f7;
+            vertical-align: top;
+          }
+          .table tr:last-child td {
+            border-bottom: 0;
+          }
+          .label {
+            width: 160px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #7b8497;
+          }
+          .value {
+            font-size: 14px;
+            color: #1f2937;
+            word-break: break-word;
+          }
+          .panel {
+            margin-top: 20px;
+            border-radius: 18px;
+            padding: 18px;
+            background: #f8f4ff;
+            border: 1px solid #eee3ff;
+          }
+          .panel h2 {
+            margin: 0 0 8px;
+            font-size: 16px;
+            color: #1f2937;
+          }
+          .panel p {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.7;
+            color: #5f6b7c;
+          }
+          .cta {
+            margin-top: 22px;
+          }
+          .cta a {
+            display: inline-block;
+            padding: 13px 18px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #2f57c8, #b22350);
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 700;
+            text-decoration: none;
+          }
+          .footer {
+            border-top: 1px solid #edf1f7;
+            padding: 20px 28px 24px;
+            font-size: 12px;
+            color: #8a93a5;
+            background: #fcfdff;
+          }
+          .footer strong {
+            color: #1f2937;
+          }
+          @media (max-width: 640px) {
             body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                line-height: 1.6;
-                color: #333;
-                background: #f5f7fa;
-                margin: 0;
-                padding: 0;
+              padding: 0;
             }
-            .email-container {
-                max-width: 600px;
-                margin: 20px auto;
-                background: #ffffff;
-                border-radius: 12px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                overflow: hidden;
+            .shell {
+              border-radius: 0;
+              border-left: 0;
+              border-right: 0;
             }
-            .header {
-                background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%);
-                padding: 32px 24px;
-                color: #ffffff;
-                text-align: center;
-            }
-            .header-icon {
-                font-size: 48px;
-                margin-bottom: 12px;
-            }
-            .header h1 {
-                margin: 0;
-                font-size: 24px;
-                font-weight: 600;
-                line-height: 1.3;
-            }
-            .content {
-                padding: 32px 24px;
-            }
-            .alert-badge {
-                display: inline-block;
-                background: #FEE2E2;
-                color: #DC2626;
-                padding: 8px 16px;
-                border-radius: 8px;
-                font-weight: 600;
-                font-size: 14px;
-                margin-bottom: 20px;
-            }
-            .service-info {
-                background: #F9FAFB;
-                padding: 20px;
-                border-radius: 8px;
-                border-left: 4px solid #DC2626;
-                margin-bottom: 24px;
-            }
-            .info-row {
-                display: flex;
-                justify-content: space-between;
-                padding: 12px 0;
-                border-bottom: 1px solid #E5E7EB;
-            }
-            .info-row:last-child {
-                border-bottom: none;
-            }
-            .info-label {
-                font-weight: 600;
-                color: #6B7280;
-                font-size: 14px;
-            }
-            .info-value {
-                color: #1F2937;
-                font-size: 14px;
-                word-break: break-all;
-            }
-            .error-box {
-                background: #FEF2F2;
-                border: 1px solid #FECACA;
-                border-radius: 8px;
-                padding: 16px;
-                margin-bottom: 24px;
-            }
-            .error-title {
-                font-weight: 600;
-                color: #991B1B;
-                margin-bottom: 8px;
-            }
-            .error-message {
-                color: #7F1D1D;
-                font-size: 14px;
-                word-break: break-word;
-            }
-            .action-box {
-                background: #EBF8FF;
-                border: 1px solid #BFE7FF;
-                border-radius: 8px;
-                padding: 16px;
-                margin-bottom: 24px;
-            }
-            .action-text {
-                color: #075985;
-                font-size: 14px;
-            }
-            .action-link {
-                color: #0284C7;
-                text-decoration: none;
-                font-weight: 600;
-            }
+            .hero,
+            .body,
             .footer {
-                background: #F3F4F6;
-                padding: 24px;
-                border-top: 1px solid #E5E7EB;
-                font-size: 12px;
-                color: #6B7280;
-                text-align: center;
+              padding-left: 18px;
+              padding-right: 18px;
             }
-            .footer-logo {
-                font-weight: 600;
-                color: #1F2937;
-                margin-bottom: 8px;
+            .hero h1 {
+              font-size: 24px;
             }
-            .divider {
-                height: 1px;
-                background: #E5E7EB;
-                margin: 24px 0;
+            .table td {
+              display: block;
+              width: auto;
+              padding-top: 8px;
+              padding-bottom: 8px;
             }
-            .status-indicator {
-                display: inline-block;
-                width: 12px;
-                height: 12px;
-                border-radius: 50%;
-                background: #DC2626;
-                margin-right: 8px;
+            .label {
+              padding-bottom: 0;
             }
-            @media (max-width: 600px) {
-                .email-container {
-                    margin: 0;
-                    border-radius: 0;
-                }
-                .content {
-                    padding: 20px 16px;
-                }
-                .header {
-                    padding: 24px 16px;
-                }
-                .header h1 {
-                    font-size: 20px;
-                }
-                .info-row {
-                    flex-direction: column;
-                }
-                .info-label {
-                    margin-bottom: 4px;
-                }
-            }
+          }
         </style>
-    </head>
-    <body>
-        <div class="email-container">
-            <div class="header">
-                <div class="header-icon">⚠️</div>
-                <h1>${service.name} is Down</h1>
+      </head>
+      <body>
+        <div class="shell">
+          <div class="hero">
+            <div class="eyebrow">${escapeHtml(eyebrow)}</div>
+            <h1>${escapeHtml(title)}</h1>
+            <p>${escapeHtml(subtitle)}</p>
+          </div>
+          <div class="body">
+            <span class="badge">${escapeHtml(statusLabel)}</span>
+            <div class="card">
+              <table class="table" role="presentation">
+                ${buildRowsHtml(rows)}
+              </table>
             </div>
-
-            <div class="content">
-                <span class="alert-badge"><span class="status-indicator"></span>SERVICE DOWN</span>
-
-                <div class="service-info">
-                    <div class="info-row">
-                        <span class="info-label">Service</span>
-                        <span class="info-value">${service.name}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Endpoint</span>
-                        <span class="info-value">${service.url}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Status</span>
-                        <span class="info-value"><strong style="color: #DC2626;">DOWN</strong></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Detected at</span>
-                        <span class="info-value">${checkedAt}</span>
-                    </div>
-                </div>
-
-                <div class="error-box">
-                    <div class="error-title">Error Details</div>
-                    <div class="error-message">${errorText}</div>
-                </div>
-
-                <div class="action-box">
-                    <div class="action-text">
-                         Monitor this service and check other incidents on your <a href="http://localhost:5173/dashboard" class="action-link">Meon Uptime Dashboard</a>
-                    </div>
-                </div>
-
-                <div class="divider"></div>
-
-                <p style="color: #6B7280; font-size: 14px; margin: 0;">
-                    This is an automated alert from your Meon Uptime monitoring system. Please don't reply to this email.
-                </p>
+            <div class="panel">
+              <h2>${escapeHtml(panelTitle)}</h2>
+              <p>${escapeHtml(panelBody)}</p>
             </div>
-
-            <div class="footer">
-                <div class="footer-logo">Meon Uptime Monitoring</div>
-                <p style="margin: 8px 0 0 0;">Alert generated at ${new Date().toLocaleString()}</p>
+            <div class="cta">
+              <a href="${escapeHtml(ctaUrl)}">${escapeHtml(ctaLabel)}</a>
             </div>
+          </div>
+          <div class="footer">
+            <strong>${escapeHtml(footerTitle)}</strong><br />
+            Automated notification generated on ${escapeHtml(formatDateTime(Date.now()))}
+          </div>
         </div>
-    </body>
+      </body>
     </html>
   `;
 
   return {
-    subject: `🚨 [Meon Uptime] ${service.name} is Down - Immediate Action Required`,
-    text: [
-      `⚠️ SERVICE DOWN ALERT`,
-      ``,
-      `Service: ${service.name}`,
-      `Endpoint: ${service.url}`,
-      `Status: DOWN`,
-      `Detected at: ${checkedAt}`,
-      `Error: ${errorText}`,
-      ``,
-      `This is an automated alert from the Meon Uptime monitoring system.`,
-      `Monitor this service: http://localhost:5173/dashboard`,
-    ].join('\n'),
     html,
+    text: [
+      eyebrow,
+      title,
+      subtitle,
+      '',
+      ...rows.map((row) => `${row.label}: ${row.value}`),
+      '',
+      `${panelTitle}: ${panelBody}`,
+      `${ctaLabel}: ${ctaUrl}`,
+    ].join('\n'),
   };
 };
 
-const buildServiceRecoveredEmailTemplate = (service, result) => {
-  const checkedAt = new Date(result.checkedAt).toLocaleString();
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                line-height: 1.6;
-                color: #333;
-                background: #f5f7fa;
-                margin: 0;
-                padding: 0;
-            }
-            .email-container {
-                max-width: 600px;
-                margin: 20px auto;
-                background: #ffffff;
-                border-radius: 12px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                overflow: hidden;
-            }
-            .header {
-                background: linear-gradient(135deg, #16A34A 0%, #15803D 100%);
-                padding: 32px 24px;
-                color: #ffffff;
-                text-align: center;
-            }
-            .header-icon {
-                font-size: 48px;
-                margin-bottom: 12px;
-            }
-            .header h1 {
-                margin: 0;
-                font-size: 24px;
-                font-weight: 600;
-                line-height: 1.3;
-            }
-            .content {
-                padding: 32px 24px;
-            }
-            .recovery-badge {
-                display: inline-block;
-                background: #DCFCE7;
-                color: #16A34A;
-                padding: 8px 16px;
-                border-radius: 8px;
-                font-weight: 600;
-                font-size: 14px;
-                margin-bottom: 20px;
-            }
-            .service-info {
-                background: #F9FAFB;
-                padding: 20px;
-                border-radius: 8px;
-                border-left: 4px solid #16A34A;
-                margin-bottom: 24px;
-            }
-            .info-row {
-                display: flex;
-                justify-content: space-between;
-                padding: 12px 0;
-                border-bottom: 1px solid #E5E7EB;
-            }
-            .info-row:last-child {
-                border-bottom: none;
-            }
-            .info-label {
-                font-weight: 600;
-                color: #6B7280;
-                font-size: 14px;
-            }
-            .info-value {
-                color: #1F2937;
-                font-size: 14px;
-            }
-            .footer {
-                background: #F3F4F6;
-                padding: 24px;
-                border-top: 1px solid #E5E7EB;
-                font-size: 12px;
-                color: #6B7280;
-                text-align: center;
-            }
-            .footer-logo {
-                font-weight: 600;
-                color: #1F2937;
-                margin-bottom: 8px;
-            }
-            .divider {
-                height: 1px;
-                background: #E5E7EB;
-                margin: 24px 0;
-            }
-            .status-indicator {
-                display: inline-block;
-                width: 12px;
-                height: 12px;
-                border-radius: 50%;
-                background: #16A34A;
-                margin-right: 8px;
-            }
-            @media (max-width: 600px) {
-                .email-container {
-                    margin: 0;
-                    border-radius: 0;
-                }
-                .content {
-                    padding: 20px 16px;
-                }
-                .header {
-                    padding: 24px 16px;
-                }
-                .header h1 {
-                    font-size: 20px;
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="email-container">
-            <div class="header">
-                <div class="header-icon">✅</div>
-                <h1>${service.name} is Back Online</h1>
-            </div>
-
-            <div class="content">
-                <span class="recovery-badge"><span class="status-indicator"></span>SERVICE RECOVERED</span>
-
-                <div class="service-info">
-                    <div class="info-row">
-                        <span class="info-label">Service</span>
-                        <span class="info-value">${service.name}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Status</span>
-                        <span class="info-value"><strong style="color: #16A34A;">UP</strong></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Recovered at</span>
-                        <span class="info-value">${checkedAt}</span>
-                    </div>
-                </div>
-
-                <div class="divider"></div>
-
-                <p style="color: #6B7280; font-size: 14px; margin: 0;">
-                    This is an automated alert from your Meon Uptime monitoring system. Please don't reply to this email.
-                </p>
-            </div>
-
-            <div class="footer">
-                <div class="footer-logo">Meon Uptime Monitoring</div>
-                <p style="margin: 8px 0 0 0;">Alert generated at ${new Date().toLocaleString()}</p>
-            </div>
-        </div>
-    </body>
-    </html>
-  `;
+const buildDownAlertEmailTemplate = (service, result = {}) => {
+  const responseTime = result.responseTimeMs ? `${result.responseTimeMs} ms` : 'Not available';
+  const errorText = result.error || 'No response received from the endpoint.';
 
   return {
-    subject: `✅ [Meon Uptime] ${service.name} is Back Online`,
-    text: [
-      `✅ SERVICE RECOVERED`,
-      ``,
-      `Service: ${service.name}`,
-      `Status: UP`,
-      `Recovered at: ${checkedAt}`,
-      ``,
-      `This is an automated alert from the Meon Uptime monitoring system.`,
-      `Monitor this service: http://localhost:5173/dashboard`,
-    ].join('\n'),
-    html,
+    subject: `[Meon Uptime] ${service.name} is down`,
+    ...buildBaseTemplate({
+      eyebrow: 'Service Incident',
+      title: `${service.name} is currently down`,
+      subtitle: 'A monitored endpoint failed its latest health check and needs attention.',
+      statusLabel: 'Down',
+      accentFrom: '#b22350',
+      accentTo: '#2f57c8',
+      badgeBackground: '#feeff1',
+      badgeText: '#b22350',
+      rows: [
+        { label: 'Service', value: service.name },
+        { label: 'Endpoint', value: service.url },
+        { label: 'Detected at', value: formatDateTime(result.checkedAt) },
+        { label: 'Response time', value: responseTime },
+        { label: 'Error', value: errorText },
+      ],
+      panelTitle: 'Recommended next step',
+      panelBody: 'Review the endpoint health, infrastructure logs, and recent deploy activity. Alert recipients mapped to this product have been notified.',
+    }),
   };
 };
+
+const buildServiceRecoveredEmailTemplate = (service, result = {}) => ({
+  subject: `[Meon Uptime] ${service.name} recovered`,
+  ...buildBaseTemplate({
+    eyebrow: 'Service Recovery',
+    title: `${service.name} is back online`,
+    subtitle: 'The latest health check passed and the service has recovered.',
+    statusLabel: 'Recovered',
+    accentFrom: '#238f63',
+    accentTo: '#2f57c8',
+    badgeBackground: '#e9f9f0',
+    badgeText: '#238f63',
+    rows: [
+      { label: 'Service', value: service.name },
+      { label: 'Endpoint', value: service.url },
+      { label: 'Recovered at', value: formatDateTime(result.checkedAt) },
+      { label: 'Response time', value: result.responseTimeMs ? `${result.responseTimeMs} ms` : 'Not available' },
+      { label: 'Current status', value: 'Healthy' },
+    ],
+    panelTitle: 'Follow-up',
+    panelBody: 'You can use the dashboard to review downtime history, recovery timing, and any related alerts for this product.',
+  }),
+});
+
+const buildSmtpTestEmailTemplate = () => ({
+  subject: '[Meon Uptime] SMTP configuration verified',
+  ...buildBaseTemplate({
+    eyebrow: 'SMTP Verification',
+    title: 'Your mail configuration is working',
+    subtitle: 'This test message confirms that Meon Uptime can send alert notifications successfully.',
+    statusLabel: 'Verified',
+    accentFrom: '#2f57c8',
+    accentTo: '#7a35b8',
+    badgeBackground: '#eef3ff',
+    badgeText: '#2f57c8',
+    rows: [
+      { label: 'Environment', value: 'Meon Uptime Dashboard' },
+      { label: 'Message type', value: 'SMTP verification' },
+      { label: 'Checked at', value: formatDateTime(Date.now()) },
+      { label: 'Dashboard', value: DASHBOARD_URL },
+    ],
+    panelTitle: 'What happens next',
+    panelBody: 'Downtime alerts for mapped products will use this SMTP configuration automatically.',
+  }),
+});
 
 module.exports = {
   buildDownAlertEmailTemplate,
   buildServiceRecoveredEmailTemplate,
+  buildSmtpTestEmailTemplate,
 };

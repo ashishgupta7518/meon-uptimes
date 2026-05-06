@@ -7,9 +7,12 @@ const readReports = async (req, res) => {
 
 const exportReports = async (req, res) => {
   const exportData = await getReportExport(req.query);
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader(
+    'Content-Type',
+    exportData.type === 'excel' ? 'application/vnd.ms-excel; charset=utf-8' : 'text/csv; charset=utf-8'
+  );
   res.setHeader('Content-Disposition', `attachment; filename="${exportData.filename}"`);
-  res.send(exportData.csv);
+  res.send(exportData.content);
 };
 
 const readTimeseries = async (req, res) => {

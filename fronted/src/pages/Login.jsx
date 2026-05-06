@@ -1,87 +1,221 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import BrandLogo from '../components/BrandLogo';
 import {
-  buildGoogleAuthUrl,
-  clearAuth,
-  decodeJwtPayload,
+  isAuthenticated,
   isEmailBlocked,
   isUserAllowed,
   setAuthUser,
-  parseGoogleHash,
+  getStoredAuthUser,
 } from '../utils/auth';
 
-const getGoogleAuthResult = () => {
-  const authParams = parseGoogleHash(window.location.hash);
-  if (!authParams) {
-    return null;
-  }
+const GoogleSignInButton = ({ onSuccess, onError, isLoading, setIsLoading }) => {
+  const googleButtonRef = useRef(null);
+  const [error, setError] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  if (authParams.error) {
-    return {
-      type: 'error',
-      message: authParams.errorDescription || 'Google sign-in failed.',
+  useEffect(() => {
+    const initializeGoogleButton = () => {
+      if (window.google && window.google.accounts && googleButtonRef.current) {
+        const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+        if (!clientId) {
+          console.error('[Google] No client ID configured');
+          setError('Google authentication is not configured. Please contact support.');
+          return;
+        }
+
+        console.log('[Google] Initializing with client ID:', clientId);
+
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: async (resp) => {
+            try {
+              setIsLoading(true);
+              setError(null);
+              console.log('[Google] Callback received, credential present:', !!resp.credential);
+
+              if (!resp.credential) {
+                throw new Error('No credential received from Google');
+              }
+
+              // Decode JWT payload (format: header.payload.signature)
+              const parts = resp.credential.split('.');
+              if (parts.length !== 3) {
+                throw new Error('Invalid token format');
+              }
+
+              const payload = JSON.parse(atob(parts[1]));
+              console.log('[Google] Decoded payload:', {
+                email: payload.email,
+                name: payload.name,
+              });
+
+              if (onSuccess) {
+                await onSuccess({
+                  token: resp.credential,
+                  email: payload.email,
+                  name: payload.name,
+                  picture: payload.picture,
+                });
+              }
+            } catch (error) {
+              console.error('[Google] Sign-In error:', error);
+              setError(error.message || 'Authentication failed');
+              if (onError) {
+                onError();
+              }
+              setIsLoading(false);
+            }
+          },
+          context: 'signin',
+          ux_mode: 'popup',
+        });
+
+        window.google.accounts.id.renderButton(googleButtonRef.current, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          text: 'signin_with',
+          shape: 'rectangular',
+          width: '100',
+          locale: 'en_US',
+        });
+
+        setIsInitialized(true);
+      }
     };
-  }
 
-  if (!authParams.idToken) {
-    return { type: 'noop' };
-  }
+    if (window.google && window.google.accounts) {
+      initializeGoogleButton();
+    } else {
+      const checkGoogleLoaded = setInterval(() => {
+        if (window.google && window.google.accounts) {
+          clearInterval(checkGoogleLoaded);
+          initializeGoogleButton();
+        }
+      }, 100);
 
-  const payload = decodeJwtPayload(authParams.idToken);
-  const userEmail = payload?.email;
-  const userName = payload?.name || payload?.email;
+      setTimeout(() => {
+        clearInterval(checkGoogleLoaded);
+        if (!window.google || !window.google.accounts) {
+          console.error('[Google] Failed to load library');
+          setError('Google authentication failed to load. Please refresh the page.');
+        }
+      }, 10000);
+    }
 
-  if (!userEmail) {
-    return {
-      type: 'error',
-      message: 'Google response did not contain a valid email address.',
+    return () => {
+      if (window.google && window.google.accounts && window.google.accounts.id) {
+        window.google.accounts.id.cancel();
+      }
     };
-  }
+  }, [onSuccess, onError, setIsLoading]);
 
-  if (isEmailBlocked(userEmail)) {
-    return {
-      type: 'error',
-      message: 'This account has been blocked. Contact your administrator for access.',
-    };
-  }
-
-  if (!isUserAllowed(userEmail)) {
-    return {
-      type: 'error',
-      message: 'Your account is not permitted to access this dashboard.',
-    };
-  }
-
-  return {
-    type: 'success',
-    user: { email: userEmail, name: userName, loginMethod: 'google' },
-  };
+  return (
+    <div className="w-full">
+      <div
+        ref={googleButtonRef}
+        className="flex justify-center mb-4"
+        style={{ minHeight: '44px' }}
+      ></div>
+      {!isInitialized && !isLoading && (
+        <div className="flex items-center justify-center gap-2 mb-4">
+          <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+          <p className="text-sm text-gray-500">Loading Google Sign-In...</p>
+        </div>
+      )}
+      {error && (
+        <div className="text-red-500 text-sm mt-2 text-center bg-red-50 p-2 rounded-lg">
+          {error}
+        </div>
+      )}
+    </div>
+  );
 };
+
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const googleAuthResult = useMemo(() => getGoogleAuthResult(), []);
-  const [error, setError] = useState(() => (googleAuthResult?.type === 'error' ? googleAuthResult.message : ''));
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const googleConfigured = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
+  // Check if user is already authenticated on mount
   useEffect(() => {
-    clearAuth();
-
-    if (!googleAuthResult) {
-      return;
-    }
-
-    window.history.replaceState(null, '', window.location.pathname);
-
-    if (googleAuthResult.type === 'success') {
-      setAuthUser(googleAuthResult.user);
+    console.log('[Login] Component mounted, checking authentication...');
+    if (isAuthenticated()) {
+      const authUser = getStoredAuthUser();
+      console.log('[Login] User already authenticated:', authUser?.email);
       navigate('/dashboard');
     }
-  }, [googleAuthResult, navigate]);
+  }, [navigate]);
 
-  const handleSubmit = (e) => {
+  // Load Google script on mount
+  useEffect(() => {
+    if (!document.querySelector('script[src*="accounts.google.com/gsi/client"]')) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      if (window.google && window.google.accounts && window.google.accounts.id) {
+        window.google.accounts.id.cancel();
+      }
+    };
+  }, []);
+
+  const handleGoogleSuccess = async (response) => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const email = response.email;
+
+      console.log('[Login] Google auth success, email:', email);
+
+      if (!email) {
+        throw new Error('No email received from Google');
+      }
+
+      // Check if email is blocked
+      if (isEmailBlocked(email)) {
+        throw new Error('This account has been blocked. Contact your administrator.');
+      }
+
+      // Check if email is allowed
+      if (!isUserAllowed(email)) {
+        throw new Error('Your account is not permitted to access this dashboard.');
+      }
+
+      // Store user data
+      setAuthUser({
+        email,
+        name: response.name || email,
+        loginMethod: 'google',
+        picture: response.picture,
+      });
+
+      console.log('[Login] Auth stored, redirecting to dashboard...');
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('[Login] Google success handler error:', error);
+      setError(error.message || 'Authentication failed');
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleError = () => {
+    console.log('[Login] Google login failed');
+    setError('Google login failed. Please try again.');
+    setIsLoading(false);
+  };
+
+  const handleLocalSubmit = (e) => {
     e.preventDefault();
     setError('');
 
@@ -103,138 +237,130 @@ const Login = () => {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    const url = buildGoogleAuthUrl();
-    if (!url) {
-      setError('Google sign-in is not configured. Add VITE_GOOGLE_CLIENT_ID in the frontend environment.');
-      return;
-    }
-    window.location.href = url;
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 flex items-center justify-center px-4 py-10 sm:px-6 lg:px-8">
-      <div className="w-full max-w-6xl rounded-[32px] bg-white shadow-2xl overflow-hidden">
+    <div className="flex min-h-screen items-center justify-center bg-[#f4f6fb] px-4 py-8 sm:px-6 lg:px-8">
+      <div className="w-full max-w-6xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_60px_rgba(15,23,42,0.08)]">
         <div className="grid grid-cols-1 lg:grid-cols-2">
-          <div className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-500 text-white px-8 py-10 sm:px-12 sm:py-14">
+          {/* Left side - Branding and Features */}
+          <div className="relative overflow-hidden border-b border-slate-200 bg-gradient-to-br from-white via-[#f8f9fd] to-[#eef3ff] px-8 py-10 lg:border-b-0 lg:border-r sm:px-10 sm:py-12">
+            <div className="absolute inset-y-0 right-0 hidden w-2 bg-gradient-to-b from-[#2f57c8] to-[#b22350] lg:block" />
             <div className="space-y-8">
-              <div className="flex items-center gap-3">
-                <div className="w-14 h-14 rounded-3xl bg-white/15 flex items-center justify-center shadow-lg shadow-blue-900/20">
-                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm uppercase tracking-[0.35em] text-blue-100/80">Meon Uptime</p>
-                  <h1 className="text-4xl font-bold tracking-tight">Monitor with confidence</h1>
-                </div>
-              </div>
+              <BrandLogo subtitle="Uptime Dashboard" />
 
               <div className="space-y-4">
-                <p className="text-base leading-7 text-blue-100/90">
-                  A modern service uptime dashboard designed for responsive monitoring, incident alerts, memory usage, and API health in a clean blue-white interface.
+                <div className="inline-flex rounded-full bg-[#eef3ff] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#2f57c8]">
+                  Monitor with confidence
+                </div>
+                <h1 className="max-w-md text-[2rem] font-bold text-slate-900 sm:text-[2.25rem]">Keep every product, alert, and report in one clean workspace.</h1>
+                <p className="max-w-xl text-base leading-7 text-slate-600">
+                  A responsive monitoring dashboard for uptime checks, SMTP-based alerting, product-wise recipients, and downloadable reports.
                 </p>
-                <div className="rounded-3xl bg-white/10 p-5 ring-1 ring-white/20">
-                  <p className="text-sm font-semibold text-white/90">Google sign-in is available</p>
-                  <p className="mt-1 text-sm text-blue-100/80">Sign in with your allowed Google account or use demo admin credentials.</p>
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <p className="text-sm font-semibold text-slate-900">Google sign-in is available</p>
+                  <p className="mt-1 text-sm text-slate-600">Sign in with your allowed Google account or use the demo admin credentials below.</p>
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-3xl bg-white/10 p-4">
-                  <p className="text-xs uppercase tracking-[0.28em] text-blue-100/75">Fast setup</p>
-                  <p className="mt-2 text-sm text-blue-100/85">Ready-to-use dashboard UI with navigation.</p>
+                <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Fast setup</p>
+                  <p className="mt-2 text-sm text-slate-700">Structured pages for monitoring, analytics, credentials, and reports.</p>
                 </div>
-                <div className="rounded-3xl bg-white/10 p-4">
-                  <p className="text-xs uppercase tracking-[0.28em] text-blue-100/75">Responsive</p>
-                  <p className="mt-2 text-sm text-blue-100/85">Looks great on all screen sizes.</p>
+                <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Responsive</p>
+                  <p className="mt-2 text-sm text-slate-700">Refined for mobile and desktop use with cleaner heading scale.</p>
                 </div>
               </div>
-            </div>
-
-            <div className="absolute inset-x-0 bottom-0 px-8 pb-8 pt-10 text-blue-100/80 sm:px-12">
-              <p className="font-medium">Dashboard preview</p>
-              <p className="mt-2 text-sm leading-6">Sidebar, topbar, overview cards, and recent activity sections are ready for your API integration.</p>
             </div>
           </div>
 
-          <div className="px-8 py-10 sm:px-12 sm:py-14 bg-white">
+          {/* Right side - Login Form */}
+          <div className="bg-white px-8 py-10 sm:px-10 sm:py-12">
             <div className="max-w-md mx-auto">
-              <div className="mb-8 text-center">
-                <p className="text-sm font-semibold uppercase tracking-[0.35em] text-blue-600">Sign in</p>
-                <h2 className="mt-3 text-3xl font-bold text-gray-900">Access your dashboard</h2>
-                <p className="mt-2 text-sm text-gray-500">Use demo credentials or Google sign-in once available.</p>
+              <div className="mb-8">
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#2f57c8]">Sign in</p>
+                <h2 className="mt-3 text-[1.8rem] font-bold text-slate-900">Access your dashboard</h2>
+                <p className="mt-2 text-sm text-slate-500">Use Google sign-in or demo credentials below.</p>
               </div>
 
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={!googleConfigured}
-                className={`w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-blue-200 bg-white py-3 px-4 text-sm font-semibold text-gray-700 shadow-sm transition ${googleConfigured ? 'hover:bg-blue-50' : 'opacity-50 cursor-not-allowed'}`}
-              >
-                <svg className="w-5 h-5 text-blue-600" viewBox="0 0 48 48" aria-hidden="true">
-                  <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C34.7 32.3 30 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.1 8.1 2.9l5.7-5.7C33.6 6.3 28.9 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c10 0 18.4-7.3 19.8-17H43.6z" />
-                  <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14 16.3 18.7 12 24 12c3.1 0 5.9 1.1 8.1 2.9l5.7-5.7C33.6 6.3 28.9 4 24 4 15.1 4 7.4 8.9 6.3 14.7z" />
-                  <path fill="#4CAF50" d="M24 44c4.1 0 7.8-1.4 10.7-3.8l-5.1-4.3C27.6 36.9 25.9 37.6 24 37.6c-6 0-10.7-3.7-12.5-8.8l-6.6 5.1C8.1 38.8 15.7 44 24 44z" />
-                  <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.4-3.4 6.2-6.4 7.8l.0 5.1c5.3-2.9 9.4-8 11-14.9z" />
-                </svg>
-                {googleConfigured ? 'Sign in with Google' : 'Google sign-in not configured'}
-              </button>
+              {/* Error Alert */}
+              {error && (
+                <div className="mb-6 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {error}
+                </div>
+              )}
 
-              <div className="mt-4 text-xs text-gray-500">
-                {googleConfigured ? 'Google sign-in is enabled.' : 'Set VITE_GOOGLE_CLIENT_ID to enable Google login.'}
-              </div>
-
-              <div className="mt-6 border-t border-gray-200 pt-6">
-                {error && (
-                  <div className="mb-4 rounded-2xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-700">
-                    {error}
+              {/* Google Sign In Button */}
+              <div className="mb-6">
+                {isLoading ? (
+                  <div className="w-full py-3 px-4 bg-gray-100 text-gray-800 border border-gray-300 rounded-xl font-medium flex items-center justify-center">
+                    <span className="inline-block w-4 h-4 border-2 border-gray-400 border-t-gray-800 rounded-full animate-spin mr-2"></span>
+                    Signing in...
                   </div>
+                ) : (
+                  <GoogleSignInButton
+                    onSuccess={handleGoogleSuccess}
+                    onError={handleGoogleError}
+                    isLoading={isLoading}
+                    setIsLoading={setIsLoading}
+                  />
                 )}
-                <form className="space-y-5" onSubmit={handleSubmit}>
-                  <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                      Email
-                    </label>
-                    <input
-                      id="email"
-                      name="email"
-                      type="email"
-                      autoComplete="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="block w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      placeholder="admin@meon.com"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                      Password
-                    </label>
-                    <input
-                      id="password"
-                      name="password"
-                      type="password"
-                      autoComplete="current-password"
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="block w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      placeholder="admin123"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/10 transition hover:from-blue-700 hover:to-blue-800"
-                  >
-                    Log in
-                  </button>
-                </form>
               </div>
 
-              <p className="mt-6 text-sm text-gray-500">
-                Demo credentials: <span className="font-semibold text-gray-700">admin@meon.com</span> / <span className="font-semibold text-gray-700">admin123</span>
+              {/* Divider */}
+              <div className="relative mb-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">or</span>
+                </div>
+              </div>
+
+              {/* Local Login Form */}
+              <form className="space-y-5" onSubmit={handleLocalSubmit}>
+                <div>
+                  <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-700">
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="field-control"
+                    placeholder="admin@meon.com"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="password" className="mb-2 block text-sm font-medium text-slate-700">
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="field-control"
+                    placeholder="admin123"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="brand-button w-full px-4 py-3 text-sm"
+                >
+                  Log in
+                </button>
+              </form>
+
+              <p className="mt-6 text-sm text-slate-500">
+                Demo credentials: <span className="font-semibold text-slate-700">admin@meon.com</span> / <span className="font-semibold text-slate-700">admin123</span>
               </p>
             </div>
           </div>

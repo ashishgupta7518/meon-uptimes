@@ -28,9 +28,75 @@ export const statusLabel = {
   down: 'Down',
 };
 
-export const getRandomValue = (base, step, index) => Math.min(100, base + step * index + Math.floor(Math.random() * 6));
+const parseNumber = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null;
+};
+
+export const getMetricBarWidth = (value) => {
+  const parsed = parseNumber(value);
+  if (parsed === null) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, parsed));
+};
+
+export const formatPercentMetric = (value) => {
+  const parsed = parseNumber(value);
+  return parsed === null ? '--' : `${parsed}%`;
+};
+
+export const formatGbMetric = (value) => {
+  const parsed = parseNumber(value);
+  return parsed === null ? '--' : `${parsed} GB`;
+};
+
+export const getResourceMetrics = (result) => {
+  const metrics = result?.metrics || {};
+  const cpu = parseNumber(metrics.cpuUsage);
+  const memory = parseNumber(metrics.memoryUsage);
+  const disk = parseNumber(metrics.diskUsage);
+  const ramGb = parseNumber(metrics.ramUsedGb);
+
+  return {
+    cpu,
+    memory,
+    disk,
+    ramGb,
+    hasMetrics: [cpu, memory, disk, ramGb].some((value) => value !== null),
+  };
+};
+
+export const getLiveAvailabilityScore = (result) => {
+  if (result?.pending || result?.stale) {
+    return null;
+  }
+
+  if (result?.statusType === 'warning') {
+    return 95;
+  }
+
+  if (result?.ok === true) {
+    return result?.slow ? 95 : 100;
+  }
+
+  return 0;
+};
 
 export const getStatusFromResult = (result) => {
+  if (['up', 'warning', 'down'].includes(result?.statusType)) {
+    return result.statusType;
+  }
+
+  if (['up', 'warning', 'down'].includes(result?.lastStatus)) {
+    return result.lastStatus;
+  }
+
   if (result?.pending || result?.stale || result?.slow) {
     return 'warning';
   }
@@ -43,6 +109,9 @@ export const getStatusNote = (result) => {
   }
   if (result?.pending) {
     return 'Checking slow API in the background';
+  }
+  if (result?.statusType === 'warning' && result?.reason) {
+    return result.reason;
   }
   if (result?.ok === true && result?.slow) {
     return `Slow response (${result.responseTimeMs}ms)`;

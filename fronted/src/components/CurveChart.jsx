@@ -73,6 +73,7 @@ const CurveChart = ({
       areaPath,
       minValue,
       maxValue,
+      labelStep: points.length > 20 ? 5 : points.length > 12 ? 3 : points.length > 7 ? 2 : 1,
       grid: Array.from({ length: 4 }).map((_, index) => {
         const ratio = index / 3;
         return {
@@ -94,16 +95,16 @@ const CurveChart = ({
   const hoveredPoint = hoveredIndex === null ? null : chart.coordinates.find((point) => point.index === hoveredIndex);
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-gray-100 bg-white">
-      <div className="absolute left-5 top-5 z-10 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 shadow-sm">
+    <div className="relative overflow-hidden rounded-[22px] border border-slate-200 bg-white">
+      <div className="absolute left-4 top-4 z-10 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 shadow-sm">
         {label}
       </div>
 
-      <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className="block h-[20rem] w-full">
+      <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className="block h-[18rem] w-full sm:h-[20rem]">
         {chart.grid.map((line) => (
           <g key={line.y}>
-            <line x1={PADDING_X} x2={CHART_WIDTH - PADDING_X} y1={line.y} y2={line.y} stroke="#e5edf4" strokeDasharray="4 8" />
-            <text x={PADDING_X} y={line.y - 6} fill="#94a3b8" fontSize="11">
+            <line x1={PADDING_X} x2={CHART_WIDTH - PADDING_X} y1={line.y} y2={line.y} stroke="#e5eaf3" strokeDasharray="4 8" />
+            <text x={PADDING_X} y={line.y - 6} fill="#98a2b3" fontSize="11">
               {line.label}
             </text>
           </g>
@@ -143,22 +144,23 @@ const CurveChart = ({
 
         {points.map((point, index) => {
           const x = PADDING_X + (index / Math.max(points.length - 1, 1)) * (CHART_WIDTH - PADDING_X * 2);
+          const showLabel = index % chart.labelStep === 0 || index === points.length - 1;
           return (
-            <text key={`label-${point.day}-${index}`} x={x} y={CHART_HEIGHT - 6} fill="#94a3b8" fontSize="11" textAnchor="middle">
-              {formatAxisLabel(point.day)}
+            <text key={`label-${point.day}-${index}`} x={x} y={CHART_HEIGHT - 6} fill="#98a2b3" fontSize="11" textAnchor="middle">
+              {showLabel ? formatAxisLabel(point.day) : ''}
             </text>
           );
         })}
       </svg>
 
       {hoveredPoint && (
-        <div className="pointer-events-none absolute right-5 top-5 w-56 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">{hoveredPoint.day}</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatValue(hoveredPoint.value)}</p>
+        <div className="pointer-events-none absolute right-3 top-16 w-[calc(100%-1.5rem)] max-w-[16rem] rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl sm:right-5 sm:top-5 sm:w-56">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{hoveredPoint.day}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatValue(hoveredPoint.value)}</p>
           {renderTooltip ? (
-            <div className="mt-3 text-sm text-gray-600">{renderTooltip(hoveredPoint)}</div>
+            <div className="mt-3 text-sm text-slate-600">{renderTooltip(hoveredPoint)}</div>
           ) : (
-            <p className="mt-3 text-sm text-gray-600">Checks: {hoveredPoint.checks || 0}</p>
+            <p className="mt-3 text-sm text-slate-600">Checks: {hoveredPoint.checks || 0}</p>
           )}
         </div>
       )}

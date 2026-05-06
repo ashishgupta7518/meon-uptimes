@@ -1,8 +1,9 @@
 const { DEFAULT_SERVICES } = require('../constants/serviceCatalog');
-const { getServiceStatus } = require('../services/statusProbeService');
+const { getServiceStatus, getStoredServicesStatus, listConfiguredServices } = require('../services/statusProbeService');
 
 const listServices = async (req, res) => {
-  res.json({ services: DEFAULT_SERVICES });
+  const services = await listConfiguredServices();
+  res.json({ services: services.length > 0 ? services : DEFAULT_SERVICES });
 };
 
 const readServiceStatus = async (req, res) => {
@@ -24,7 +25,7 @@ const readServicesStatus = async (req, res) => {
   }
 
   const startedAt = Date.now();
-  const results = await Promise.all(urls.map((item) => getServiceStatus(item)));
+  const results = await getStoredServicesStatus(urls);
   res.json({
     results,
     cached: results.every((item) => item.cached && !item.pending),

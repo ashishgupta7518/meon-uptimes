@@ -6,17 +6,16 @@ const {
   serializeSmtpCredential,
   verifyAndOptionallySendTest,
 } = require('../services/smtpService');
-const { sendManualDownAlerts } = require('../services/monitoringService');
-const { mongoose } = require('../config/db');
 const { getServiceInput, normalizeUrl, splitEmails, usersFromEmails } = require('../utils/common');
+const DB_NAME = process.env.SQL_DB_NAME || 'meon_uptime';
 
 const getSmtpSettings = async (req, res) => {
   const credential = await getSmtpCredential(true);
   res.json({
     credential: serializeSmtpCredential(credential),
-    database: mongoose.connection.name,
-    collection: SmtpCredential.collection.name,
-    id: credential?._id || null,
+    database: DB_NAME,
+    table: 'smtp_credentials',
+    id: credential?.id || null,
   });
 };
 
@@ -44,13 +43,13 @@ const saveSmtpSettings = async (req, res) => {
     { key: 'default' },
     { $set: update },
     { upsert: true, new: true }
-  ).select('+password');
+  );
 
   res.json({
     credential: serializeSmtpCredential(credential),
-    database: mongoose.connection.name,
-    collection: SmtpCredential.collection.name,
-    id: credential._id,
+    database: DB_NAME,
+    table: 'smtp_credentials',
+    id: credential?.id || null,
   });
 };
 
@@ -141,19 +140,10 @@ const deleteAlertMapping = async (req, res) => {
 };
 
 const sendManualAlert = async (req, res) => {
-  const urls = Array.isArray(req.body.urls)
-    ? req.body.urls
-    : req.body.url
-      ? [req.body.url]
-      : [];
-
-  if (urls.length === 0) {
-    res.status(400);
-    throw new Error('No service URL supplied');
-  }
-
-  const results = await sendManualDownAlerts(urls);
-  res.json({ results });
+  res.status(409).json({
+    ok: false,
+    message: 'Manual alert sending is disabled. Alerts are sent only by the backend monitoring scheduler on state transitions.',
+  });
 };
 
 module.exports = {

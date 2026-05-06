@@ -1,7 +1,11 @@
 const ServiceAlertMapping = require('../models/ServiceAlertMapping');
 const SmtpCredential = require('../models/SmtpCredential');
 const { splitEmails, uniqueEmails } = require('../utils/common');
-const { buildDownAlertEmailTemplate, buildServiceRecoveredEmailTemplate } = require('../utils/emailTemplates');
+const {
+  buildDownAlertEmailTemplate,
+  buildServiceRecoveredEmailTemplate,
+  buildSmtpTestEmailTemplate,
+} = require('../utils/emailTemplates');
 const nodemailer = require('nodemailer');
 
 const serializeSmtpCredential = (credential) => {
@@ -22,11 +26,11 @@ const serializeSmtpCredential = (credential) => {
 
   return {
     host: credential.host,
-    port: credential.port,
-    username: credential.username,
-    fromEmail: credential.fromEmail,
-    fromName: credential.fromName,
-    useTls: credential.useTls,
+    port: credential.port || 587,
+    username: credential.username || '',
+    fromEmail: credential.fromEmail || '',
+    fromName: credential.fromName || '',
+    useTls: credential.useTls !== false,
     secure: credential.secure,
     defaultRecipients: credential.defaultRecipients || [],
     hasPassword: Boolean(credential.password),
@@ -36,8 +40,7 @@ const serializeSmtpCredential = (credential) => {
 };
 
 const getSmtpCredential = (withPassword = false) => {
-  const query = SmtpCredential.findOne({ key: 'default' });
-  return withPassword ? query.select('+password') : query;
+  return SmtpCredential.findOne({ key: 'default' });
 };
 
 const buildTransport = (credential) => {
@@ -84,11 +87,13 @@ const verifyAndOptionallySendTest = async (to) => {
 
   const recipients = splitEmails(to || credential.defaultRecipients);
   if (recipients.length > 0) {
+    const emailContent = buildSmtpTestEmailTemplate();
     await transport.sendMail({
       from: buildFromAddress(credential),
       to: recipients,
-      subject: '[Meon Uptime] SMTP test',
-      text: 'SMTP credentials are verified for Meon Uptime alerts.',
+      subject: emailContent.subject,
+      text: emailContent.text,
+      html: emailContent.html,
     });
   }
 
@@ -99,8 +104,12 @@ const verifyAndOptionallySendTest = async (to) => {
 
 const sendDownAlertEmail = async (service, result) => {
   const { credential, recipients } = await resolveAlertRecipients(service.url);
-  if (!credential || recipients.length === 0) {
-    return { sent: false, recipients: 0 };
+  if (!credential) {
+    return { sent: false, recipients: 0, error: 'SMTP credentials are not configured' };
+  }
+
+  if (recipients.length === 0) {
+    return { sent: false, recipients: 0, error: `No recipients mapped for ${service.name}` };
   }
 
   const transport = buildTransport(credential);
@@ -114,13 +123,17 @@ const sendDownAlertEmail = async (service, result) => {
     html: emailContent.html,
   });
 
-  return { sent: true, recipients: recipients.length };
+  return { sent: true, recipients: recipients.length, error: null };
 };
 
 const sendServiceRecoveredEmail = async (service, result) => {
   const { credential, recipients } = await resolveAlertRecipients(service.url);
-  if (!credential || recipients.length === 0) {
-    return { sent: false, recipients: 0 };
+  if (!credential) {
+    return { sent: false, recipients: 0, error: 'SMTP credentials are not configured' };
+  }
+
+  if (recipients.length === 0) {
+    return { sent: false, recipients: 0, error: `No recipients mapped for ${service.name}` };
   }
 
   const transport = buildTransport(credential);
@@ -134,7 +147,7 @@ const sendServiceRecoveredEmail = async (service, result) => {
     html: emailContent.html,
   });
 
-  return { sent: true, recipients: recipients.length };
+  return { sent: true, recipients: recipients.length, error: null };
 };
 
 module.exports = {
