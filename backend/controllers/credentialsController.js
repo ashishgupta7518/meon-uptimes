@@ -1,3 +1,4 @@
+const path = require('path');
 const ServiceAlertMapping = require('../models/ServiceAlertMapping');
 const SmtpCredential = require('../models/SmtpCredential');
 const { fetchDirectoryUsers } = require('../services/userDirectoryService');
@@ -6,15 +7,19 @@ const {
   serializeSmtpCredential,
   verifyAndOptionallySendTest,
 } = require('../services/smtpService');
+const { getDatabasePath } = require('../config/db');
 const { getServiceInput, normalizeUrl, splitEmails, usersFromEmails } = require('../utils/common');
-const DB_NAME = process.env.SQL_DB_NAME || 'meon_uptime';
+
+const getDatabaseName = () => path.basename(getDatabasePath());
 
 const getSmtpSettings = async (req, res) => {
   const credential = await getSmtpCredential(true);
   res.json({
     credential: serializeSmtpCredential(credential),
-    database: DB_NAME,
+    database: getDatabaseName(),
+    databaseType: 'sqlite',
     table: 'smtp_credentials',
+    collection: 'smtp_credentials',
     id: credential?.id || null,
   });
 };
@@ -47,8 +52,10 @@ const saveSmtpSettings = async (req, res) => {
 
   res.json({
     credential: serializeSmtpCredential(credential),
-    database: DB_NAME,
+    database: getDatabaseName(),
+    databaseType: 'sqlite',
     table: 'smtp_credentials',
+    collection: 'smtp_credentials',
     id: credential?.id || null,
   });
 };

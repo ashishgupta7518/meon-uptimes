@@ -6,7 +6,7 @@ const { connectDatabase } = require('./config/db');
 const { startMonitoringScheduler } = require('./services/statusProbeService');
 const app = require('./app');
 
-const PORT = 5000;
+const PORT = 5001;
 
 const startServer = async () => {
   const connected = await connectDatabase();

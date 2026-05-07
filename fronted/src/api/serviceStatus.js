@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001';
 const STATUS_TIMEOUT_MS = Number(import.meta.env.VITE_STATUS_TIMEOUT_MS) || 7000;
 
 export const fetchServiceStatuses = async (services) => {

@@ -28,6 +28,13 @@ const formatDateOnly = (value) => {
 const toCamelCase = (key) => key.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
 const toSnakeCase = (key) => key.replace(/([A-Z])/g, (match) => `_${match.toLowerCase()}`);
 
+const quoteIdentifier = (identifier) => {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+    throw new Error(`Unsafe SQL identifier: ${identifier}`);
+  }
+  return `"${identifier}"`;
+};
+
 const normalizeObjectKeys = (object, converter) => {
   if (Array.isArray(object)) {
     return object.map((item) => normalizeObjectKeys(item, converter));
@@ -292,15 +299,11 @@ const attachSaveMethod = (row, tableName, config) => {
     delete updateData.updatedAt;
 
     const columns = Object.keys(updateData);
-    const placeholders = columns.map(() => '?? = ?').join(', ');
-    const params = [];
-
-    columns.forEach((key) => {
-      params.push(key, adaptValue(updateData[key]));
-    });
+    const placeholders = columns.map((column) => `${quoteIdentifier(column)} = ?`).join(', ');
+    const params = columns.map((key) => adaptValue(updateData[key]));
     params.push(this.id);
 
-    const sql = `UPDATE \`${tableName}\` SET ${placeholders} WHERE id = ?`;
+    const sql = `UPDATE ${quoteIdentifier(tableName)} SET ${placeholders} WHERE id = ?`;
     await getDb().query(sql, params);
     const updated = await findById(tableName, config, this.id);
     return updated;
@@ -310,14 +313,14 @@ const attachSaveMethod = (row, tableName, config) => {
 };
 
 const findById = async (tableName, config, id) => {
-  const [rows] = await getDb().query(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
+  const [rows] = await getDb().query(`SELECT * FROM ${quoteIdentifier(tableName)} WHERE id = ?`, [id]);
   const row = rows[0] ? normalizeRow(rows[0], config) : null;
   return attachSaveMethod(row, tableName, config);
 };
 
 const createModel = (tableName, config = {}) => {
   const getAllRows = async () => {
-    const [rows] = await getDb().query(`SELECT * FROM \`${tableName}\``);
+    const [rows] = await getDb().query(`SELECT * FROM ${quoteIdentifier(tableName)}`);
     return rows.map((row) => normalizeRow(row, config));
   };
 
@@ -336,7 +339,7 @@ const createModel = (tableName, config = {}) => {
     const data = normalizeWriteKeys(stripDocumentMeta({ ...doc }));
     const columns = Object.keys(data);
     const placeholders = columns.map(() => '?').join(', ');
-    const sql = `INSERT INTO \`${tableName}\` (${columns.map((column) => `\`${column}\``).join(', ')}) VALUES (${placeholders})`;
+    const sql = `INSERT INTO ${quoteIdentifier(tableName)} (${columns.map((column) => quoteIdentifier(column)).join(', ')}) VALUES (${placeholders})`;
     const values = columns.map((column) => adaptValue(data[column]));
     const [result] = await getDb().query(sql, values);
     return findById(tableName, config, result.insertId);
@@ -348,13 +351,10 @@ const createModel = (tableName, config = {}) => {
     if (columns.length === 0) {
       return findById(tableName, config, id);
     }
-    const assignments = columns.map(() => '?? = ?').join(', ');
-    const params = [];
-    columns.forEach((column) => {
-      params.push(column, adaptValue(data[column]));
-    });
+    const assignments = columns.map((column) => `${quoteIdentifier(column)} = ?`).join(', ');
+    const params = columns.map((column) => adaptValue(data[column]));
     params.push(id);
-    const sql = `UPDATE \`${tableName}\` SET ${assignments} WHERE id = ?`;
+    const sql = `UPDATE ${quoteIdentifier(tableName)} SET ${assignments} WHERE id = ?`;
     await getDb().query(sql, params);
     return findById(tableName, config, id);
   };
@@ -376,7 +376,7 @@ const createModel = (tableName, config = {}) => {
   };
 
   const deleteById = async (id) => {
-    const [result] = await getDb().query(`DELETE FROM \`${tableName}\` WHERE id = ?`, [id]);
+    const [result] = await getDb().query(`DELETE FROM ${quoteIdentifier(tableName)} WHERE id = ?`, [id]);
     return result.affectedRows > 0 ? { deletedCount: result.affectedRows } : { deletedCount: 0 };
   };
 
@@ -404,6 +404,11 @@ const createModel = (tableName, config = {}) => {
       const insertColumns = Object.keys(insertData);
       const insertPlaceholders = insertColumns.map(() => '?').join(', ');
       const insertValues = insertColumns.map((column) => adaptValue(insertData[column]));
+      const conflictColumns = (config.uniqueKeys || []).map((key) => quoteIdentifier(toSnakeCase(key)));
+
+      if (conflictColumns.length === 0) {
+        return create(insertDoc);
+      }
 
       const updateParts = [];
       const updateParams = [];
@@ -411,7 +416,7 @@ const createModel = (tableName, config = {}) => {
       if (update.$set) {
         Object.entries(update.$set).forEach(([key, value]) => {
           const snakeKey = toSnakeCase(key);
-          updateParts.push(`\`${snakeKey}\` = ?`);
+          updateParts.push(`${quoteIdentifier(snakeKey)} = ?`);
           updateParams.push(adaptValue(value));
         });
       }
@@ -419,29 +424,27 @@ const createModel = (tableName, config = {}) => {
       if (update.$inc) {
         Object.entries(update.$inc).forEach(([key, value]) => {
           const snakeKey = toSnakeCase(key);
-          updateParts.push(`\`${snakeKey}\` = \`${snakeKey}\` + ?`);
+          updateParts.push(`${quoteIdentifier(snakeKey)} = ${quoteIdentifier(snakeKey)} + ?`);
           updateParams.push(Number(value));
         });
       }
 
       if (updateParts.length === 0) {
-        updateParts.push('`updated_at` = NOW()');
+        updateParts.push('"updated_at" = CURRENT_TIMESTAMP');
       }
 
       const updateClause = updateParts.join(', ');
-      const sql = `INSERT INTO \`${tableName}\` (${insertColumns.map((column) => `\`${column}\``).join(', ')}) VALUES (${insertPlaceholders}) ON DUPLICATE KEY UPDATE ${updateClause}`;
+      const sql = `INSERT INTO ${quoteIdentifier(tableName)} (${insertColumns.map((column) => quoteIdentifier(column)).join(', ')}) VALUES (${insertPlaceholders}) ON CONFLICT (${conflictColumns.join(', ')}) DO UPDATE SET ${updateClause}`;
       const params = [...insertValues, ...updateParams];
 
       const [result] = await getDb().query(sql, params);
-      if (result.insertId) {
-        return findById(tableName, config, result.insertId);
+      const saved = await findOne(filter);
+      if (saved) {
+        return saved;
       }
 
-      if (result.affectedRows > 0) {
-        const matchedRow = await findOne(filter);
-        if (matchedRow?.id != null) {
-          return findById(tableName, config, matchedRow.id);
-        }
+      if (result.insertId) {
+        return findById(tableName, config, result.insertId);
       }
 
       return await findOne(filter);

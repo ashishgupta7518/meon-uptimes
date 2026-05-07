@@ -33,7 +33,7 @@ const toSqlDateTime = (date) => date.toISOString().slice(0, 19).replace('T', ' '
 const claimInitialDownAlert = async (service, checkedAt) => {
   const checkedAtSql = toSqlDateTime(checkedAt);
   const [result] = await getDb().query(
-    `INSERT IGNORE INTO \`service_states\`
+    `INSERT OR IGNORE INTO "service_states"
       (service_name, url, last_status, last_checked_at, last_down_alert_at, down_alert_sent)
      VALUES (?, ?, 'down', ?, ?, 0)`,
     [service.name, service.url, checkedAtSql, checkedAtSql]
@@ -71,7 +71,7 @@ const claimDownReminderAlert = async (service, checkedAt) => {
        AND last_status = 'down'
        AND (
          last_down_alert_at IS NULL
-         OR TIMESTAMPDIFF(SECOND, last_down_alert_at, ?) >= ?
+         OR (strftime('%s', ?) - strftime('%s', last_down_alert_at)) >= ?
        )`,
     [checkedAtSql, service.url, checkedAtSql, cooldownSeconds]
   );
